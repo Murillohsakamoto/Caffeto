@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('admin', false) == true;
+    }
+
+    function isMaster() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('master', false) == true;
+    }
+
+    match /usuarios/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin() || isMaster());
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+        !('admin' in request.resource.data) && !('master' in request.resource.data);
+      allow update: if isMaster() ||
+        (isSignedIn() && request.auth.uid == userId &&
+         request.resource.data.get('admin', false) == resource.data.get('admin', false) &&
+         request.resource.data.get('master', false) == resource.data.get('master', false));
+      allow delete: if isMaster();
+    }
+
+    match /cardapio/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if isMaster();
+    }
+
+    match /parceiros/{partnerId} {
+      allow read: if isSignedIn();
+      allow write: if isMaster();
+    }
+
+    match /pedidos/{pedidoId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || isMaster());
+      allow update: if isAdmin() || isMaster() ||
+        (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow delete: if isMaster();
+    }
+  }
+}

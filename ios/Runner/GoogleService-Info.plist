@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyDRcdeia20UOGbOK5f8eKYkFMuS-TdbCK8</string>
+	<key>GCM_SENDER_ID</key>
+	<string>792481109924</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.caffeto</string>
+	<key>PROJECT_ID</key>
+	<string>caffeto-a12fe</string>
+	<key>STORAGE_BUCKET</key>
+	<string>caffeto-a12fe.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:792481109924:ios:7d8b9ee375ed40ef7bd331</string>
+	<key>CLIENT_ID</key>
+	<string>792481109924-81ustrt6e213jp26frd9fej3vmmi27i9.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.792481109924-81ustrt6e213jp26frd9fej3vmmi27i9</string>
+</dict>
+</plist>

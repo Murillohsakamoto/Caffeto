@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "792481109924",
+    "project_id": "caffeto-a12fe",
+    "storage_bucket": "caffeto-a12fe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:792481109924:android:b259d84725327f317bd331",
+        "android_client_info": {
+          "package_name": "com.example.caffeto"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "792481109924-e2fkatfdt6uhgb8p07nsqhn7qg03es48.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.caffeto",
+            "certificate_hash": "0bf3303228724e951a2015bd8b2722dd3b11921e"
+          }
+        },
+        {
+          "client_id": "792481109924-gaie1aecusaj24phaq22evn37qe6mus5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcyTvBmAkL4-nYsYaw87N3E1hv0taxmuI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "792481109924-gaie1aecusaj24phaq22evn37qe6mus5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "792481109924-81ustrt6e213jp26frd9fej3vmmi27i9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.caffeto"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

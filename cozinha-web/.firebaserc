@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "caffeto-a12fe"
+  },
+  "targets": {
+    "caffeto-a12fe": {
+      "hosting": {
+        "cozinha": [
+          "caffeto-cozinha"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
