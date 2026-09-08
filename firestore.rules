@@ -1,4 +1,4 @@
-rules_version = '2';
+﻿rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -39,11 +39,25 @@ service cloud.firestore {
     }
 
     match /pedidos/{pedidoId} {
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'Aguardando pagamento';
+
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || isMaster());
+
+      // O dono do pedido sÃ³ pode alterar campos que nÃ£o afetam o status
+      // nem o valor do pagamento (ex: observaÃ§Ã£o). Confirmar pagamento e
+      // avanÃ§ar o status Ã© feito exclusivamente pela Cloud Function
+      // (Admin SDK, que ignora estas regras) via webhook do Mercado Pago.
       allow update: if isAdmin() || isMaster() ||
-        (isSignedIn() && resource.data.userId == request.auth.uid);
+        (isSignedIn() && resource.data.userId == request.auth.uid &&
+         request.resource.data.status == resource.data.status &&
+         request.resource.data.total == resource.data.total &&
+         request.resource.data.get('mercadoPagoPaymentId', null) ==
+           resource.data.get('mercadoPagoPaymentId', null));
+
       allow delete: if isMaster();
     }
   }
 }
+

@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "caffeto-a12fe"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }
