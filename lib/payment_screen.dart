@@ -1,9 +1,10 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum _PaymentMethod { pix, card }
 
@@ -22,12 +23,16 @@ class PaymentScreen extends StatefulWidget {
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  final _PaymentMethod _method = _PaymentMethod.pix;
+  _PaymentMethod _method = _PaymentMethod.pix;
 
   bool _loadingPix = false;
   String? _pixQrCodeBase64;
   String? _pixCopiaECola;
   String? _erro;
+
+  bool _loadingCard = false;
+  String? _cardCheckoutUrl;
+  String? _erroCard;
 
   StreamSubscription<DocumentSnapshot>? _pedidoSub;
   bool _pago = false;
@@ -47,9 +52,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   /// Escuta o pedido no Firestore em tempo real. Quando o webhook do
   /// Mercado Pago confirmar o pagamento, a Cloud Function muda o status
-  /// para "Aguardando preparo" e essa tela reage automaticamente â€”
-  /// nÃ£o existe botÃ£o de "confirmar pagamento" manual, porque quem
-  /// confirma Ã© o Mercado Pago, nunca o app.
+  /// para "Aguardando preparo" e essa tela reage automaticamente —
+  /// não existe botão de "confirmar pagamento" manual, porque quem
+  /// confirma é o Mercado Pago, nunca o app.
   void _escutarStatusDoPedido() {
     _pedidoSub = FirebaseFirestore.instance
         .collection('pedidos')
@@ -84,13 +89,70 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } on FirebaseFunctionsException catch (e) {
       setState(() {
         _loadingPix = false;
-        _erro = e.message ?? 'NÃ£o foi possÃ­vel gerar o Pix.';
+        _erro = e.message ?? 'Não foi possível gerar o Pix.';
       });
     } catch (_) {
       setState(() {
         _loadingPix = false;
-        _erro = 'NÃ£o foi possÃ­vel gerar o Pix. Verifique sua conexÃ£o.';
+        _erro = 'Não foi possível gerar o Pix. Verifique sua conexão.';
       });
+    }
+  }
+
+  /// Cria a preferência de pagamento com cartão (Checkout Pro) e guarda o
+  /// link de pagamento hospedado pelo Mercado Pago. Não coletamos dados de
+  /// cartão dentro do app: quem identifica a bandeira, valida o cartão e
+  /// cumpre PCI compliance é a própria página da Mercado Pago.
+  Future<void> _gerarPagamentoCartao() async {
+    setState(() {
+      _loadingCard = true;
+      _erroCard = null;
+    });
+    try {
+      final callable =
+          FirebaseFunctions.instanceFor(region: 'southamerica-east1')
+              .httpsCallable('criarPreferenciaCartao');
+
+      final result = await callable.call({'pedidoId': widget.orderId});
+      final data = result.data as Map;
+
+      setState(() {
+        _cardCheckoutUrl = data['checkoutUrl'] as String?;
+        _loadingCard = false;
+      });
+    } on FirebaseFunctionsException catch (e) {
+      setState(() {
+        _loadingCard = false;
+        _erroCard = e.message ?? 'Não foi possível gerar o pagamento.';
+      });
+    } catch (_) {
+      setState(() {
+        _loadingCard = false;
+        _erroCard =
+            'Não foi possível gerar o pagamento. Verifique sua conexão.';
+      });
+    }
+  }
+
+  Future<void> _abrirCheckoutCartao() async {
+    final url = _cardCheckoutUrl;
+    if (url == null) return;
+    final abriu =
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!abriu && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir o pagamento.')),
+      );
+    }
+  }
+
+  void _selecionarMetodo(_PaymentMethod method) {
+    if (_method == method) return;
+    setState(() => _method = method);
+    if (method == _PaymentMethod.card &&
+        _cardCheckoutUrl == null &&
+        !_loadingCard) {
+      _gerarPagamentoCartao();
     }
   }
 
@@ -125,7 +187,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             Expanded(
               child: _method == _PaymentMethod.pix
                   ? _buildPixSection()
-                  : _buildCardEmBreve(),
+                  : _buildCardSection(),
             ),
           ],
         ),
@@ -166,21 +228,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          _buildMethodTab('PIX', _PaymentMethod.pix, Icons.qr_code_2, true),
+          _buildMethodTab('PIX', _PaymentMethod.pix, Icons.qr_code_2),
           const SizedBox(width: 12),
-          _buildMethodTab(
-              'CartÃ£o (em breve)', _PaymentMethod.card, Icons.credit_card, false),
+          _buildMethodTab('Cartão', _PaymentMethod.card, Icons.credit_card),
         ],
       ),
     );
   }
 
-  Widget _buildMethodTab(
-      String label, _PaymentMethod method, IconData icon, bool enabled) {
+  Widget _buildMethodTab(String label, _PaymentMethod method, IconData icon) {
     final isSelected = _method == method;
     return Expanded(
-      child: Opacity(
-        opacity: enabled ? 1 : 0.5,
+      child: GestureDetector(
+        onTap: () => _selecionarMetodo(method),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -211,19 +271,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCardEmBreve() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Text(
-          'Pagamento por cartÃ£o chega em breve.\nPor enquanto, pague com Pix.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
         ),
       ),
     );
@@ -315,7 +362,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
               SizedBox(width: 8),
               Text(
-                'Aguardando confirmaÃ§Ã£o do pagamento...',
+                'Aguardando confirmação do pagamento...',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -337,7 +384,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 Clipboard.setData(ClipboardData(text: _pixCopiaECola!));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: const Text('CÃ³digo Pix copiado!'),
+                    content: const Text('Código Pix copiado!'),
                     backgroundColor: const Color(0xFFC8A96E),
                     behavior: SnackBarBehavior.floating,
                     duration: const Duration(seconds: 1),
@@ -371,6 +418,121 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardSection() {
+    if (_loadingCard) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFFC8A96E)),
+      );
+    }
+
+    if (_erroCard != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                _erroCard!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF9E9E9E)),
+              ),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _gerarPagamentoCartao,
+                icon: const Icon(Icons.refresh, color: Color(0xFFC8A96E)),
+                label: const Text(
+                  'Tentar novamente',
+                  style: TextStyle(
+                      color: Color(0xFFC8A96E), fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          const Icon(Icons.credit_card, size: 56, color: Color(0xFFC8A96E)),
+          const SizedBox(height: 20),
+          const Text(
+            'Pagamento seguro pelo Mercado Pago',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Você será levado para uma página segura para digitar os dados do cartão',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Color(0xFF9E9E9E)),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _abrirCheckoutCartao,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC8A96E),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Pagar com cartão',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFC8A96E),
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Aguardando confirmação do pagamento...',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Assim que o pagamento for aprovado, o pedido segue direto pra cozinha.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+          ),
         ],
       ),
     );
@@ -410,7 +572,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Pagamento aprovado. Seu pedido jÃ¡ foi enviado para a cozinha!',
+                  'Pagamento aprovado. Seu pedido já foi enviado para a cozinha!',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
                 ),
@@ -428,7 +590,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       elevation: 0,
                     ),
                     child: const Text(
-                      'Voltar ao inÃ­cio',
+                      'Voltar ao início',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -445,4 +607,3 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 }
-

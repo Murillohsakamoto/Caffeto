@@ -45,9 +45,9 @@ service cloud.firestore {
 
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || isMaster());
 
-      // O dono do pedido sÃ³ pode alterar campos que nÃ£o afetam o status
-      // nem o valor do pagamento (ex: observaÃ§Ã£o). Confirmar pagamento e
-      // avanÃ§ar o status Ã© feito exclusivamente pela Cloud Function
+      // O dono do pedido só pode alterar campos que não afetam o status
+      // nem o valor do pagamento (ex: observação). Confirmar pagamento e
+      // avançar o status é feito exclusivamente pela Cloud Function
       // (Admin SDK, que ignora estas regras) via webhook do Mercado Pago.
       allow update: if isAdmin() || isMaster() ||
         (isSignedIn() && resource.data.userId == request.auth.uid &&

@@ -1,6 +1,6 @@
 ﻿{
   "name": "functions",
-  "description": "Cloud Functions do Caffeto - integraÃ§Ã£o Mercado Pago",
+  "description": "Cloud Functions do Caffeto - integração Mercado Pago",
   "engines": {
     "node": "20"
   },
