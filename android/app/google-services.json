@@ -7,6 +7,58 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:792481109924:android:2769784a250a06c07bd331",
+        "android_client_info": {
+          "package_name": "com.caffeto.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "792481109924-7dakq81q50a8p5a9esfcvehi4jjcetkp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.caffeto.app",
+            "certificate_hash": "d7ae01ad95eb90c7b2432534470bc7df3d950965"
+          }
+        },
+        {
+          "client_id": "792481109924-n9lkfvojn6p8q9thq3hg6r2q5ump7duf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.caffeto.app",
+            "certificate_hash": "0bf3303228724e951a2015bd8b2722dd3b11921e"
+          }
+        },
+        {
+          "client_id": "792481109924-gaie1aecusaj24phaq22evn37qe6mus5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcyTvBmAkL4-nYsYaw87N3E1hv0taxmuI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "792481109924-gaie1aecusaj24phaq22evn37qe6mus5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "792481109924-81ustrt6e213jp26frd9fej3vmmi27i9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.caffeto"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:792481109924:android:b259d84725327f317bd331",
         "android_client_info": {
           "package_name": "com.example.caffeto"

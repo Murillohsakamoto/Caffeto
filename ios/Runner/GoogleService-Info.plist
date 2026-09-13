@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CLIENT_ID</key>
+	<string>792481109924-biqdis4tm6krg6i8q9nh2k6nuvpakcgs.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.792481109924-biqdis4tm6krg6i8q9nh2k6nuvpakcgs</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>792481109924-e2fkatfdt6uhgb8p07nsqhn7qg03es48.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyDRcdeia20UOGbOK5f8eKYkFMuS-TdbCK8</string>
 	<key>GCM_SENDER_ID</key>
@@ -9,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.caffeto</string>
+	<string>com.caffeto.app</string>
 	<key>PROJECT_ID</key>
 	<string>caffeto-a12fe</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,10 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:792481109924:ios:7d8b9ee375ed40ef7bd331</string>
-	<key>CLIENT_ID</key>
-	<string>792481109924-81ustrt6e213jp26frd9fej3vmmi27i9.apps.googleusercontent.com</string>
-	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.792481109924-81ustrt6e213jp26frd9fej3vmmi27i9</string>
+	<string>1:792481109924:ios:e05d4af4be0324d07bd331</string>
 </dict>
 </plist>
