@@ -18,6 +18,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   List<Map<String, String>> _enderecos = [];
   bool _uploadingPhoto = false;
   bool _isAdmin = false;
+  bool _isCozinha = false;
 
   @override
   void initState() {
@@ -41,6 +42,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
       setState(() {
         _enderecos = list;
         _isAdmin = data['admin'] == true;
+        _isCozinha = data['cozinha'] == true;
       });
     }
   }
@@ -184,7 +186,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
             _buildOption(Icons.notifications_outlined, 'Notificações',
                 onTap: () {}),
             _buildOption(Icons.help_outline, 'Ajuda', onTap: () {}),
-            if (_isAdmin)
+            if (_isAdmin || _isCozinha)
               _buildOption(
                 Icons.soup_kitchen_outlined,
                 'Modo Cozinha',

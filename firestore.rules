@@ -1,4 +1,4 @@
-﻿rules_version = '2';
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -17,14 +17,23 @@ service cloud.firestore {
         get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('master', false) == true;
     }
 
+    // Papel restrito de cozinha: só enxerga e avança pedidos, ao contrário
+    // de admin/master (que também mexem em cardápio, parceiros e usuários).
+    function isCozinha() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('cozinha', false) == true;
+    }
+
     match /usuarios/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin() || isMaster());
       allow create: if isSignedIn() && request.auth.uid == userId &&
-        !('admin' in request.resource.data) && !('master' in request.resource.data);
+        !('admin' in request.resource.data) && !('master' in request.resource.data) &&
+        !('cozinha' in request.resource.data);
       allow update: if isMaster() ||
         (isSignedIn() && request.auth.uid == userId &&
          request.resource.data.get('admin', false) == resource.data.get('admin', false) &&
-         request.resource.data.get('master', false) == resource.data.get('master', false));
+         request.resource.data.get('master', false) == resource.data.get('master', false) &&
+         request.resource.data.get('cozinha', false) == resource.data.get('cozinha', false));
       allow delete: if isMaster();
     }
 
@@ -43,13 +52,24 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.status == 'Aguardando pagamento';
 
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || isMaster());
+      allow read: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin() || isMaster() || isCozinha());
 
       // O dono do pedido só pode alterar campos que não afetam o status
       // nem o valor do pagamento (ex: observação). Confirmar pagamento e
-      // avançar o status é feito exclusivamente pela Cloud Function
+      // aprovar o pagamento em si é feito exclusivamente pela Cloud Function
       // (Admin SDK, que ignora estas regras) via webhook do Mercado Pago.
+      // A cozinha só pode avançar o status do pedido (preparo/pronto/entrega),
+      // nunca mudar valor, dono ou dados do pagamento.
       allow update: if isAdmin() || isMaster() ||
+        (isCozinha() &&
+         request.resource.data.userId == resource.data.userId &&
+         request.resource.data.total == resource.data.total &&
+         request.resource.data.get('mercadoPagoPaymentId', null) ==
+           resource.data.get('mercadoPagoPaymentId', null) &&
+         request.resource.data.get('mercadoPagoPreferenceId', null) ==
+           resource.data.get('mercadoPagoPreferenceId', null) &&
+         request.resource.data.status in ['Em preparo', 'Pronto', 'Entregue']) ||
         (isSignedIn() && resource.data.userId == request.auth.uid &&
          request.resource.data.status == resource.data.status &&
          request.resource.data.total == resource.data.total &&

@@ -74,7 +74,8 @@ class _AuthGate extends StatelessWidget {
         }
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final isAdmin = data?['admin'] == true;
-        if (isAdmin) return const CozinhaScreen();
+        final isCozinha = data?['cozinha'] == true;
+        if (isAdmin || isCozinha) return const CozinhaScreen();
         return const HomeScreen();
       },
     );
