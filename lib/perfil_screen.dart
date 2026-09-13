@@ -320,7 +320,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
             if (FirebaseAuth.instance.currentUser?.photoURL != null)
               _sheetOption(Icons.delete_outline, 'Remover foto', () async {
                 Navigator.pop(context);
+                final uid = FirebaseAuth.instance.currentUser!.uid;
                 await FirebaseAuth.instance.currentUser!.updatePhotoURL(null);
+                try {
+                  await FirebaseStorage.instance.ref('avatars/$uid.jpg').delete();
+                } catch (_) {
+                  // Sem problema se já não existir; o que importa é que o
+                  // Auth já não aponta mais pra essa foto.
+                }
                 if (mounted) setState(() {});
               }),
           ],
