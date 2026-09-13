@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
+
+const _prazoRetirada = Duration(minutes: 20);
 
 class CozinhaScreen extends StatelessWidget {
   const CozinhaScreen({super.key});
@@ -32,7 +35,8 @@ class CozinhaScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: db
             .collection('pedidos')
-            .where('status', whereIn: ['Aguardando preparo', 'Em preparo'])
+            .where('status',
+                whereIn: ['Aguardando preparo', 'Em preparo', 'Pronto'])
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -126,6 +130,11 @@ class CozinhaScreen extends StatelessWidget {
           (d) => (d.data() as Map<String, dynamic>)['status'] == 'Em preparo',
         )
         .length;
+    final prontos = docs
+        .where(
+          (d) => (d.data() as Map<String, dynamic>)['status'] == 'Pronto',
+        )
+        .length;
 
     return Container(
       color: Colors.white,
@@ -135,6 +144,8 @@ class CozinhaScreen extends StatelessWidget {
           _summaryChip('$aguardando aguardando', const Color(0xFFFF9800)),
           const SizedBox(width: 8),
           _summaryChip('$emPreparo em preparo', const Color(0xFF2196F3)),
+          const SizedBox(width: 8),
+          _summaryChip('$prontos prontos', const Color(0xFF4CAF50)),
         ],
       ),
     );
@@ -171,6 +182,24 @@ class _OrderCard extends StatefulWidget {
 
 class _OrderCardState extends State<_OrderCard> {
   bool _updating = false;
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Atualiza o contador de retirada periodicamente enquanto a tela
+    // estiver aberta (não precisa de segundo em segundo, é só pra cozinha
+    // acompanhar se o pedido está ficando parado no balcão).
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   Color _statusColor(String status) {
     switch (status) {
@@ -178,8 +207,10 @@ class _OrderCardState extends State<_OrderCard> {
         return const Color(0xFFFF9800);
       case 'Em preparo':
         return const Color(0xFF2196F3);
-      default:
+      case 'Pronto':
         return const Color(0xFF4CAF50);
+      default:
+        return const Color(0xFF9C27B0);
     }
   }
 
@@ -187,10 +218,13 @@ class _OrderCardState extends State<_OrderCard> {
     setState(() => _updating = true);
     try {
       final update = <String, dynamic>{'status': newStatus};
-      if (newStatus == 'Em preparo')
+      if (newStatus == 'Em preparo') {
         update['iniciadoEm'] = FieldValue.serverTimestamp();
-      else if (newStatus == 'Pronto')
+      } else if (newStatus == 'Pronto') {
         update['prontoEm'] = FieldValue.serverTimestamp();
+      } else if (newStatus == 'Entregue') {
+        update['entregueEm'] = FieldValue.serverTimestamp();
+      }
       await db.collection('pedidos').doc(widget.docId).update(update);
     } catch (_) {
       if (mounted) {
@@ -369,11 +403,73 @@ class _OrderCardState extends State<_OrderCard> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                _buildRetiradaInfo(status),
                 const SizedBox(height: 12),
                 _buildActionButton(status),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRetiradaInfo(String status) {
+    final horario = widget.data['horarioRetirada'] as String?;
+    final prontoEm = widget.data['prontoEm'] as Timestamp?;
+
+    String? countdownText;
+    Color countdownColor = const Color(0xFF9E9E9E);
+    if (status == 'Pronto' && prontoEm != null) {
+      final prazo = prontoEm.toDate().add(_prazoRetirada);
+      final restante = prazo.difference(DateTime.now());
+      if (restante.isNegative) {
+        countdownText = 'Atrasado ${restante.abs().inMinutes}min';
+        countdownColor = const Color(0xFFE53935);
+      } else {
+        countdownText = 'Retirar em ${restante.inMinutes}min';
+        countdownColor = const Color(0xFF4CAF50);
+      }
+    }
+
+    if (horario == null && countdownText == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          if (horario != null)
+            Text(
+              'Retirada às $horario',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9E9E9E),
+              ),
+            )
+          else
+            const SizedBox.shrink(),
+          if (countdownText != null)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: countdownColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                countdownText,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: countdownColor,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -420,6 +516,25 @@ class _OrderCardState extends State<_OrderCard> {
           label: const Text('Marcar como pronto'),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4CAF50),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
+    if (status == 'Pronto') {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => _updateStatus('Entregue'),
+          icon: const Icon(Icons.delivery_dining_outlined, size: 18),
+          label: const Text('Marcar como entregue'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF9C27B0),
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),

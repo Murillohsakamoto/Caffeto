@@ -1,5 +1,5 @@
 ﻿name: caffeto
-description: "Caffeto - CafÃ© com Afeto"
+description: "Caffeto - Café com Afeto"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -19,6 +19,7 @@ dependencies:
   google_sign_in: ^6.2.0
   cached_network_image: ^3.3.0
   image_picker: ^1.1.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

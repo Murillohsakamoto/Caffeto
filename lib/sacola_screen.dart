@@ -16,13 +16,22 @@ class SacolaScreen extends StatefulWidget {
 class _SacolaScreenState extends State<SacolaScreen> {
   bool _finalizando = false;
 
+  bool _carregandoHorarios = true;
+  List<String> _horariosDisponiveis = [];
+  String? _horarioEscolhido;
+  int _tempoEstimadoMin = 15;
+
   @override
   void initState() {
     super.initState();
     CartController.instance.addListener(_onCartChanged);
+    _carregarHorarios();
   }
 
-  void _onCartChanged() => setState(() {});
+  void _onCartChanged() {
+    setState(() {});
+    _recalcularHorariosDisponiveis();
+  }
 
   @override
   void dispose() {
@@ -30,9 +39,100 @@ class _SacolaScreenState extends State<SacolaScreen> {
     super.dispose();
   }
 
+  final Map<String, num> _tempoPorNome = {};
+  final Map<String, String> _categoriaPorNome = {};
+  final Map<String, num> _tempoPorCategoria = {};
+  List<String> _todosHorarios = [];
+
+  /// Busca o cardápio (pra saber o tempo estimado de cada prato/categoria)
+  /// e a grade de horários ativa cadastrada pelo admin.
+  Future<void> _carregarHorarios() async {
+    setState(() => _carregandoHorarios = true);
+    try {
+      final cardapioSnap = await db.collection('cardapio').get();
+      for (final doc in cardapioSnap.docs) {
+        final data = doc.data();
+        final nome = data['nome'] as String?;
+        if (nome == null) continue;
+        _categoriaPorNome[nome] = data['categoria'] as String? ?? '';
+        final tempo = data['tempoEstimadoMin'] as num?;
+        if (tempo != null) _tempoPorNome[nome] = tempo;
+      }
+
+      final categoriasSnap = await db.collection('categorias').get();
+      for (final doc in categoriasSnap.docs) {
+        final tempo = doc.data()['tempoEstimadoMin'] as num?;
+        if (tempo != null) _tempoPorCategoria[doc.id] = tempo;
+      }
+
+      final horariosSnap = await db
+          .collection('horarios_retirada')
+          .where('ativo', isEqualTo: true)
+          .orderBy('hora')
+          .get();
+      _todosHorarios =
+          horariosSnap.docs.map((d) => d.data()['hora'] as String).toList();
+
+      _recalcularHorariosDisponiveis();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _todosHorarios = [];
+          _horariosDisponiveis = [];
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _carregandoHorarios = false);
+    }
+  }
+
+  /// Tempo estimado do pedido = o maior tempo estimado entre os itens da
+  /// sacola (prato tem prioridade; senão usa o padrão da categoria; senão
+  /// 15min). Usado só pra filtrar horários que a cozinha não alcançaria.
+  int _calcularTempoEstimadoPedido() {
+    var maior = 15;
+    for (final item in CartController.instance.items) {
+      final nome = item['name'] as String;
+      final categoria = _categoriaPorNome[nome];
+      final tempo = _tempoPorNome[nome] ??
+          (categoria != null ? _tempoPorCategoria[categoria] : null) ??
+          15;
+      if (tempo > maior) maior = tempo.toInt();
+    }
+    return maior;
+  }
+
+  void _recalcularHorariosDisponiveis() {
+    _tempoEstimadoMin = _calcularTempoEstimadoPedido();
+    final limite = DateTime.now().add(Duration(minutes: _tempoEstimadoMin));
+
+    final disponiveis = _todosHorarios.where((hora) {
+      final partes = hora.split(':');
+      if (partes.length != 2) return false;
+      final horaSlot = DateTime(
+        limite.year,
+        limite.month,
+        limite.day,
+        int.parse(partes[0]),
+        int.parse(partes[1]),
+      );
+      return !horaSlot.isBefore(limite);
+    }).toList();
+
+    setState(() {
+      _horariosDisponiveis = disponiveis;
+      if (_horarioEscolhido != null &&
+          !_horariosDisponiveis.contains(_horarioEscolhido)) {
+        _horarioEscolhido = null;
+      }
+    });
+  }
+
   Future<void> _criarPedidoEPagar() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    final horario = _horarioEscolhido;
+    if (horario == null) return;
 
     final cart = CartController.instance;
     final total = cart.total;
@@ -53,6 +153,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
             .toList(),
         'total': total,
         'status': 'Aguardando pagamento',
+        'horarioRetirada': horario,
         'criadoEm': FieldValue.serverTimestamp(),
       });
 
@@ -94,7 +195,9 @@ class _SacolaScreenState extends State<SacolaScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         content: Text(
-          'Total: R\$ ${CartController.instance.total.toStringAsFixed(2).replaceAll('.', ',')}\n\nContinuar para o pagamento?',
+          'Total: R\$ ${CartController.instance.total.toStringAsFixed(2).replaceAll('.', ',')}\n'
+          'Retirada às $_horarioEscolhido\n\n'
+          'Continuar para o pagamento?',
           style: const TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
         ),
         actions: [
@@ -125,6 +228,92 @@ class _SacolaScreenState extends State<SacolaScreen> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHorarioRetirada() {
+    if (_carregandoHorarios) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 4),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: Color(0xFFC8A96E)),
+          ),
+        ),
+      );
+    }
+
+    if (_todosHorarios.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 8),
+        child: Text(
+          'Nenhum horário de retirada cadastrado no momento.',
+          style: TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Retirar às (tempo estimado de preparo: ${_tempoEstimadoMin}min)',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_horariosDisponiveis.isEmpty)
+            const Text(
+              'Nenhum horário disponível hoje. Tente novamente amanhã.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+            )
+          else
+            SizedBox(
+              height: 36,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _horariosDisponiveis.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (_, index) {
+                  final hora = _horariosDisponiveis[index];
+                  final isSelected = _horarioEscolhido == hora;
+                  return GestureDetector(
+                    onTap: () => setState(() => _horarioEscolhido = hora),
+                    child: Container(
+                      alignment: Alignment.center,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFC8A96E)
+                            : const Color(0xFFF5F0E8),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Text(
+                        hora,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected
+                              ? Colors.white
+                              : const Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -326,6 +515,8 @@ class _SacolaScreenState extends State<SacolaScreen> {
                   ),
                   child: Column(
                     children: [
+                      _buildHorarioRetirada(),
+                      const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -351,7 +542,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: _finalizando
+                          onPressed: (_finalizando || _horarioEscolhido == null)
                               ? null
                               : _confirmarFinalizacao,
                           style: ElevatedButton.styleFrom(
