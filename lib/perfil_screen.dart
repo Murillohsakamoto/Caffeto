@@ -6,6 +6,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'cozinha_screen.dart';
+import 'gerenciar_cardapio_screen.dart';
+import 'horarios_retirada_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -197,6 +199,28 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 ),
                 highlight: true,
               ),
+            if (_isAdmin) ...[
+              _buildOption(
+                Icons.timer_outlined,
+                'Tempo estimado de preparo',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const GerenciarCardapioScreen()),
+                ),
+                highlight: true,
+              ),
+              _buildOption(
+                Icons.schedule_outlined,
+                'Horários de retirada',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const HorariosRetiradaScreen()),
+                ),
+                highlight: true,
+              ),
+            ],
 
             const SizedBox(height: 16),
             const Divider(color: Color(0xFFEEEEEE)),
@@ -543,6 +567,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
                             (data['total'] as num? ?? 0).toDouble();
                         final status =
                             data['status'] as String? ?? 'Em preparo';
+                        final horarioRetirada =
+                            data['horarioRetirada'] as String?;
                         final ts = data['criadoEm'] as Timestamp?;
                         final date = ts != null
                             ? '${ts.toDate().day.toString().padLeft(2, '0')}/${ts.toDate().month.toString().padLeft(2, '0')}/${ts.toDate().year}'
@@ -595,6 +621,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
                                     fontSize: 13,
                                     color: Color(0xFF9E9E9E)),
                               ),
+                              if (horarioRetirada != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Retirada às $horarioRetirada',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF9E9E9E)),
+                                ),
+                              ],
                               const SizedBox(height: 6),
                               Row(
                                 mainAxisAlignment:

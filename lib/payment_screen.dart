@@ -8,6 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 enum _PaymentMethod { pix, card }
 
+const _prazoRetirada = Duration(minutes: 20);
+const _statusPosPagamento = ['Aguardando preparo', 'Em preparo', 'Pronto', 'Entregue'];
+
 class PaymentScreen extends StatefulWidget {
   final String orderId;
   final double total;
@@ -35,18 +38,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _erroCard;
 
   StreamSubscription<DocumentSnapshot>? _pedidoSub;
+  Timer? _ticker;
   bool _pago = false;
+  Map<String, dynamic> _pedidoData = {};
 
   @override
   void initState() {
     super.initState();
     _gerarPagamentoPix();
     _escutarStatusDoPedido();
+    // Atualiza o contador de retirada periodicamente enquanto o pedido
+    // estiver "Pronto" e essa tela aberta.
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _pedidoSub?.cancel();
+    _ticker?.cancel();
     super.dispose();
   }
 
@@ -54,17 +65,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
   /// Mercado Pago confirmar o pagamento, a Cloud Function muda o status
   /// para "Aguardando preparo" e essa tela reage automaticamente —
   /// não existe botão de "confirmar pagamento" manual, porque quem
-  /// confirma é o Mercado Pago, nunca o app.
+  /// confirma é o Mercado Pago, nunca o app. Continua escutando depois
+  /// disso pra acompanhar o pedido até a cozinha marcar como pronto.
   void _escutarStatusDoPedido() {
     _pedidoSub = FirebaseFirestore.instance
         .collection('pedidos')
         .doc(widget.orderId)
         .snapshots()
         .listen((snap) {
-      final status = snap.data()?['status'];
-      if (status == 'Aguardando preparo' && mounted) {
-        setState(() => _pago = true);
-      }
+      final data = snap.data();
+      if (data == null || !mounted) return;
+      final status = data['status'] as String?;
+      setState(() {
+        _pedidoData = data;
+        if (_statusPosPagamento.contains(status)) _pago = true;
+      });
     });
   }
 
@@ -538,7 +553,79 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
+  ({IconData icon, String titulo, String subtitulo}) _infoParaStatus(
+      String status) {
+    switch (status) {
+      case 'Em preparo':
+        return (
+          icon: Icons.soup_kitchen_outlined,
+          titulo: 'Preparando seu pedido...',
+          subtitulo: 'A cozinha já começou. Avisamos quando estiver pronto.',
+        );
+      case 'Pronto':
+        return (
+          icon: Icons.shopping_bag_outlined,
+          titulo: 'Pedido pronto!',
+          subtitulo: 'Pode retirar no balcão.',
+        );
+      case 'Entregue':
+        return (
+          icon: Icons.done_all,
+          titulo: 'Pedido entregue',
+          subtitulo: 'Obrigado por pedir na Caffeto!',
+        );
+      default:
+        return (
+          icon: Icons.check_circle_outline,
+          titulo: 'Pedido confirmado!',
+          subtitulo:
+              'Pagamento aprovado. Seu pedido já foi enviado para a cozinha!',
+        );
+    }
+  }
+
+  Widget? _buildContadorRetirada(String status) {
+    final horario = _pedidoData['horarioRetirada'] as String?;
+    final prontoEm = _pedidoData['prontoEm'] as Timestamp?;
+    if (status != 'Pronto' || prontoEm == null) {
+      if (horario == null) return null;
+      return Text(
+        'Retirada às $horario',
+        style: const TextStyle(fontSize: 13, color: Color(0xFF9E9E9E)),
+      );
+    }
+
+    final restante = prontoEm.toDate().add(_prazoRetirada).difference(
+          DateTime.now(),
+        );
+    final atrasado = restante.isNegative;
+    final texto = atrasado
+        ? 'Já passou ${restante.abs().inMinutes}min do prazo de retirada'
+        : 'Retire em até ${restante.inMinutes}min';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: (atrasado ? const Color(0xFFE53935) : const Color(0xFFC8A96E))
+            .withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: atrasado ? const Color(0xFFE53935) : const Color(0xFFC8A96E),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSuccess() {
+    final status = _pedidoData['status'] as String? ?? 'Aguardando preparo';
+    final info = _infoParaStatus(status);
+    final contador = _buildContadorRetirada(status);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -555,27 +642,31 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     color: Color(0xFFF5F0E8),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.check_circle_outline,
+                  child: Icon(
+                    info.icon,
                     size: 60,
-                    color: Color(0xFFC8A96E),
+                    color: const Color(0xFFC8A96E),
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  'Pedido confirmado!',
-                  style: TextStyle(
+                Text(
+                  info.titulo,
+                  style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF1A1A1A),
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Pagamento aprovado. Seu pedido já foi enviado para a cozinha!',
+                Text(
+                  info.subtitulo,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
+                  style: const TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
                 ),
+                if (contador != null) ...[
+                  const SizedBox(height: 16),
+                  contador,
+                ],
                 const SizedBox(height: 40),
                 SizedBox(
                   width: double.infinity,
