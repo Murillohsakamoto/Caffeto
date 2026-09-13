@@ -128,7 +128,14 @@ class _SacolaScreenState extends State<SacolaScreen> {
     });
   }
 
+  // Gerado na primeira tentativa de finalizar e reaproveitado em qualquer
+  // retentativa (rede lenta, timeout) dessa mesma finalização — evita criar
+  // dois pedidos iguais se o app chamar isso de novo antes de saber se a
+  // primeira chamada deu certo. `set` com o mesmo id é seguro de repetir.
+  DocumentReference<Map<String, dynamic>>? _pedidoEmCriacao;
+
   Future<void> _criarPedidoEPagar() async {
+    if (_finalizando) return; // trava contra duplo toque antes do rebuild
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final horario = _horarioEscolhido;
@@ -139,7 +146,9 @@ class _SacolaScreenState extends State<SacolaScreen> {
 
     setState(() => _finalizando = true);
     try {
-      final docRef = await db.collection('pedidos').add({
+      final docRef = _pedidoEmCriacao ??= db.collection('pedidos').doc();
+
+      await docRef.set({
         'userId': user.uid,
         'itens': cart.items
             .map(
@@ -158,6 +167,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
       });
 
       cart.clear();
+      _pedidoEmCriacao = null; // próximo pedido precisa de um id novo
 
       if (mounted) {
         Navigator.push(

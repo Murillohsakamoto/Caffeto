@@ -40,6 +40,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   StreamSubscription<DocumentSnapshot>? _pedidoSub;
   Timer? _ticker;
   bool _pago = false;
+  bool _pagamentoRecusado = false;
   Map<String, dynamic> _pedidoData = {};
 
   @override
@@ -78,9 +79,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final status = data['status'] as String?;
       setState(() {
         _pedidoData = data;
-        if (_statusPosPagamento.contains(status)) _pago = true;
+        if (_statusPosPagamento.contains(status)) {
+          _pago = true;
+          _pagamentoRecusado = false;
+        } else if (status == 'Pagamento recusado') {
+          _pagamentoRecusado = true;
+        }
       });
     });
+  }
+
+  /// Depois de um pagamento recusado/cancelado, tenta de novo gerando um
+  /// pagamento novo pro método atualmente selecionado.
+  Future<void> _tentarNovamente() async {
+    setState(() {
+      _pagamentoRecusado = false;
+      _pixQrCodeBase64 = null;
+      _pixCopiaECola = null;
+      _cardCheckoutUrl = null;
+    });
+    if (_method == _PaymentMethod.pix) {
+      await _gerarPagamentoPix();
+    } else {
+      await _gerarPagamentoCartao();
+    }
   }
 
   Future<void> _gerarPagamentoPix() async {
@@ -164,16 +186,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void _selecionarMetodo(_PaymentMethod method) {
     if (_method == method) return;
     setState(() => _method = method);
-    if (method == _PaymentMethod.card &&
-        _cardCheckoutUrl == null &&
-        !_loadingCard) {
+    // Sempre gera de novo ao trocar de método: o backend cancela a tentativa
+    // anterior (evita cobrar duas vezes) e devolve um pagamento novo.
+    if (method == _PaymentMethod.card) {
       _gerarPagamentoCartao();
+    } else {
+      _gerarPagamentoPix();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_pago) return _buildSuccess();
+    if (_pagamentoRecusado) return _buildPagamentoRecusado();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -549,6 +574,81 @@ class _PaymentScreenState extends State<PaymentScreen> {
             style: TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPagamentoRecusado() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 60,
+                    color: Colors.red.shade400,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Pagamento não aprovado',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'O Mercado Pago recusou ou cancelou esse pagamento. Você não foi cobrado — pode tentar de novo.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
+                ),
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _tentarNovamente,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC8A96E),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Tentar novamente',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                  child: const Text(
+                    'Voltar ao início',
+                    style: TextStyle(color: Color(0xFF9E9E9E)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
