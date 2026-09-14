@@ -1,12 +1,53 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
+import 'gerenciar_cardapio_screen.dart';
+import 'horarios_retirada_screen.dart';
 
 const _prazoRetirada = Duration(minutes: 20);
 
 class CozinhaScreen extends StatelessWidget {
-  const CozinhaScreen({super.key});
+  /// true quando essa é a tela de entrada da conta (admin/cozinha caem
+  /// direto aqui ao logar, via _AuthGate) — nesse caso não existe rota de
+  /// "voltar" e é essa tela que precisa oferecer o menu (sair, config).
+  /// false quando é só um preview aberto de dentro do Perfil do cliente
+  /// ("Modo Cozinha"), onde o botão de voltar faz sentido de novo.
+  final bool isRoot;
+  final bool isAdmin;
+
+  const CozinhaScreen({super.key, this.isRoot = false, this.isAdmin = false});
+
+  Future<void> _sair(BuildContext context) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Sair', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: const Text('Tem certeza que deseja sair da conta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Color(0xFF9E9E9E))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              elevation: 0,
+            ),
+            child: const Text('Sair', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true) {
+      await FirebaseAuth.instance.signOut();
+      // authStateChanges em CaffetoApp cuida da navegação de volta ao login
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,14 +56,17 @@ class CozinhaScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios,
-            color: Color(0xFF1A1A1A),
-            size: 20,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: !isRoot,
+        leading: isRoot
+            ? null
+            : IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios,
+                  color: Color(0xFF1A1A1A),
+                  size: 20,
+                ),
+                onPressed: () => Navigator.pop(context),
+              ),
         title: const Text(
           'Cozinha',
           style: TextStyle(
@@ -31,6 +75,48 @@ class CozinhaScreen extends StatelessWidget {
             fontSize: 20,
           ),
         ),
+        actions: isRoot
+            ? [
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Color(0xFF1A1A1A)),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'tempo':
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const GerenciarCardapioScreen()),
+                        );
+                        break;
+                      case 'horarios':
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const HorariosRetiradaScreen()),
+                        );
+                        break;
+                      case 'sair':
+                        _sair(context);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (isAdmin) ...[
+                      const PopupMenuItem(
+                        value: 'tempo',
+                        child: Text('Tempo estimado de preparo'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'horarios',
+                        child: Text('Horários de retirada'),
+                      ),
+                      const PopupMenuDivider(),
+                    ],
+                    const PopupMenuItem(value: 'sair', child: Text('Sair')),
+                  ],
+                ),
+              ]
+            : null,
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: db
