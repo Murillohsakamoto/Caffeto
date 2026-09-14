@@ -20,6 +20,11 @@ db.settings({ databaseId: "caffeto" });
 const MP_ACCESS_TOKEN = defineSecret("MP_ACCESS_TOKEN");
 const MP_WEBHOOK_SECRET = defineSecret("MP_WEBHOOK_SECRET");
 
+// Secret Manager não aceita valor vazio, então usamos esse marcador até o
+// segredo de verdade (painel MP > Webhooks > detalhes > "Assinatura
+// secreta") ser configurado.
+const WEBHOOK_SECRET_PENDENTE = "PENDENTE_CONFIGURAR";
+
 const MP_API = "https://api.mercadopago.com";
 const WEBHOOK_URL =
   "https://southamerica-east1-caffeto-a12fe.cloudfunctions.net/mercadopagoWebhook";
@@ -428,7 +433,7 @@ exports.mercadopagoWebhook = onRequest(
   async (req, res) => {
     try {
       const webhookSecret = MP_WEBHOOK_SECRET.value();
-      if (webhookSecret) {
+      if (webhookSecret && webhookSecret !== WEBHOOK_SECRET_PENDENTE) {
         if (!assinaturaValida(req, webhookSecret)) {
           logger.error("Assinatura do webhook do Mercado Pago inválida.");
           res.status(401).send("Invalid signature");
