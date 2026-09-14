@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'cart_controller.dart';
 import 'main.dart';
@@ -49,11 +48,6 @@ class _CardapioScreenState extends State<CardapioScreen> {
           .get();
 
       final items = snap.docs.map((doc) => doc.data()).toList();
-
-      // DEBUG — remover após confirmar imagens
-      for (final item in items.take(3)) {
-        debugPrint('DEBUG imagem_url [${item['nome']}]: ${item['imagem_url']}');
-      }
 
       final cats = <String>[];
       for (final item in items) {

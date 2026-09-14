@@ -3,6 +3,7 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 admin.initializeApp();
 
@@ -11,17 +12,131 @@ admin.initializeApp();
 const db = admin.firestore();
 db.settings({ databaseId: "caffeto" });
 
-// Segredo do Mercado Pago. Configurar com:
+// Segredos do Mercado Pago. Configurar com:
 // firebase functions:secrets:set MP_ACCESS_TOKEN
+// firebase functions:secrets:set MP_WEBHOOK_SECRET
+// (o segredo do webhook fica no painel MP: Suas integrações > sua app >
+// Webhooks > detalhes do webhook > "Assinatura secreta")
 const MP_ACCESS_TOKEN = defineSecret("MP_ACCESS_TOKEN");
+const MP_WEBHOOK_SECRET = defineSecret("MP_WEBHOOK_SECRET");
+
+// Secret Manager não aceita valor vazio, então usamos esse marcador até o
+// segredo de verdade (painel MP > Webhooks > detalhes > "Assinatura
+// secreta") ser configurado.
+const WEBHOOK_SECRET_PENDENTE = "PENDENTE_CONFIGURAR";
 
 const MP_API = "https://api.mercadopago.com";
+const WEBHOOK_URL =
+  "https://southamerica-east1-caffeto-a12fe.cloudfunctions.net/mercadopagoWebhook";
+
+// Pedido pode gerar um novo pagamento quando está aguardando ou quando a
+// tentativa anterior foi recusada/cancelada.
+const STATUS_PODE_PAGAR = ["Aguardando pagamento", "Pagamento recusado"];
+
+/**
+ * Nunca confia no `total` gravado no pedido: recalcula a partir do preço
+ * real de cada item no cardápio agora. Isso fecha a brecha de um cliente
+ * adulterado (ou uma escrita direta no Firestore) criar um pedido com
+ * itens de preço cheio mas um total inventado.
+ */
+async function calcularTotalReal(itens) {
+  if (!Array.isArray(itens) || itens.length === 0) {
+    throw new HttpsError("failed-precondition", "Pedido sem itens.");
+  }
+
+  const nomes = [...new Set(itens.map((i) => i.nome))];
+  const buscas = await Promise.all(
+    nomes.map((nome) =>
+      db.collection("cardapio").where("nome", "==", nome).limit(1).get()
+    )
+  );
+
+  const precoPorNome = {};
+  buscas.forEach((snap, i) => {
+    if (snap.empty) {
+      throw new HttpsError(
+        "failed-precondition",
+        `O item "${nomes[i]}" não existe mais no cardápio.`
+      );
+    }
+    precoPorNome[nomes[i]] = Number(snap.docs[0].data().preco);
+  });
+
+  return itens.reduce(
+    (soma, item) => soma + precoPorNome[item.nome] * Number(item.qty),
+    0
+  );
+}
+
+/**
+ * Confere que o horário de retirada escolhido realmente existe na grade
+ * cadastrada pelo admin e está ativo.
+ */
+async function validarHorarioRetirada(horarioRetirada) {
+  if (!horarioRetirada) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Pedido sem horário de retirada."
+    );
+  }
+  const doc = await db.collection("horarios_retirada").doc(horarioRetirada).get();
+  if (!doc.exists || doc.data().ativo !== true) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Horário de retirada indisponível. Escolha outro horário."
+    );
+  }
+}
+
+/**
+ * Ao trocar de método de pagamento (Pix <-> Cartão) para o mesmo pedido,
+ * cancela a tentativa anterior antes de liberar a nova — sem isso, as duas
+ * ficam pagáveis ao mesmo tempo e o cliente pode ser cobrado em dobro.
+ * Se a tentativa anterior já tiver sido aprovada, bloqueia a troca (o
+ * pedido já foi pago).
+ */
+async function encerrarTentativaAnterior(pedido, accessToken) {
+  if (pedido.metodoPagamento !== "PIX" || !pedido.mercadoPagoPaymentId) {
+    // Método anterior era cartão (uma preference, nunca virou pagamento) ou
+    // não havia tentativa alguma — nada para checar/cancelar na API do MP.
+    return;
+  }
+
+  const resp = await fetch(
+    `${MP_API}/v1/payments/${pedido.mercadoPagoPaymentId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const pagamentoAnterior = await resp.json();
+
+  if (resp.ok && pagamentoAnterior.status === "approved") {
+    throw new HttpsError("failed-precondition", "Este pedido já foi pago.");
+  }
+
+  if (resp.ok && ["pending", "in_process"].includes(pagamentoAnterior.status)) {
+    const cancelResp = await fetch(
+      `${MP_API}/v1/payments/${pedido.mercadoPagoPaymentId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ status: "cancelled" }),
+      }
+    );
+    if (!cancelResp.ok) {
+      logger.warn(
+        `Não foi possível cancelar o Pix ${pedido.mercadoPagoPaymentId} ao trocar de método`,
+        await cancelResp.json().catch(() => null)
+      );
+    }
+  }
+}
 
 /**
  * FUNÇÃO 1 — Criar pagamento Pix
  * Chamada pelo app Flutter (via cloud_functions) quando o cliente
- * escolhe pagar com Pix. NUNCA confia no valor enviado pelo app:
- * busca o total real do pedido direto no Firestore.
+ * escolhe pagar com Pix.
  */
 exports.criarPagamentoPix = onCall(
   { secrets: [MP_ACCESS_TOKEN], region: "southamerica-east1" },
@@ -45,7 +160,6 @@ exports.criarPagamentoPix = onCall(
 
     const pedido = pedidoSnap.data();
 
-    // Garante que o pedido é do próprio usuário que está pagando
     if (pedido.userId !== uid) {
       throw new HttpsError(
         "permission-denied",
@@ -53,31 +167,41 @@ exports.criarPagamentoPix = onCall(
       );
     }
 
-    if (pedido.status !== "Aguardando pagamento") {
+    if (!STATUS_PODE_PAGAR.includes(pedido.status)) {
       throw new HttpsError(
         "failed-precondition",
         "Este pedido não está aguardando pagamento."
       );
     }
 
-    // Busca e-mail do usuário para o pagador (Mercado Pago exige um e-mail)
+    await validarHorarioRetirada(pedido.horarioRetirada);
+
+    const accessToken = MP_ACCESS_TOKEN.value();
+
+    // Troca de método (cartão -> pix): cancela/checa a tentativa anterior e
+    // abre uma nova "revisão" de pagamento, com uma idempotency key nova.
+    let revisao = pedido.pagamentoRevisao || 0;
+    if (pedido.metodoPagamento && pedido.metodoPagamento !== "PIX") {
+      await encerrarTentativaAnterior(pedido, accessToken);
+      revisao += 1;
+    }
+
     const userRecord = await admin.auth().getUser(uid);
     const payerEmail = userRecord.email || "cliente@caffeto.app";
 
-    const total = Number(pedido.total);
-    if (!total || total <= 0) {
-      throw new HttpsError("failed-precondition", "Total do pedido inválido.");
+    const total = await calcularTotalReal(pedido.itens);
+    if (Math.abs(total - Number(pedido.total)) > 0.01) {
+      logger.warn(
+        `Total divergente no pedido ${pedidoId}: recebido ${pedido.total}, real ${total}. Usando o valor real.`
+      );
     }
-
-    const webhookUrl =
-      "https://southamerica-east1-caffeto-a12fe.cloudfunctions.net/mercadopagoWebhook";
 
     const body = {
       transaction_amount: total,
       description: `Pedido Caffeto #${pedidoId}`,
       payment_method_id: "pix",
       external_reference: pedidoId,
-      notification_url: webhookUrl,
+      notification_url: WEBHOOK_URL,
       payer: { email: payerEmail },
     };
 
@@ -85,9 +209,10 @@ exports.criarPagamentoPix = onCall(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${MP_ACCESS_TOKEN.value()}`,
-        // Evita criar pagamento duplicado se o app chamar 2x
-        "X-Idempotency-Key": `pix-${pedidoId}`,
+        Authorization: `Bearer ${accessToken}`,
+        // Retentativas do mesmo app reusam a mesma revisão -> mesma key ->
+        // Mercado Pago devolve o mesmo pagamento, sem duplicar.
+        "X-Idempotency-Key": `pix-${pedidoId}-r${revisao}`,
       },
       body: JSON.stringify(body),
     });
@@ -109,10 +234,13 @@ exports.criarPagamentoPix = onCall(
       throw new HttpsError("internal", "Mercado Pago não retornou o QR Code.");
     }
 
-    // Salva o ID do pagamento no pedido para o webhook conseguir localizar
     await pedidoRef.update({
+      status: "Aguardando pagamento",
+      total,
       mercadoPagoPaymentId: payment.id,
+      mercadoPagoPreferenceId: admin.firestore.FieldValue.delete(),
       metodoPagamento: "PIX",
+      pagamentoRevisao: revisao,
     });
 
     return {
@@ -162,25 +290,34 @@ exports.criarPreferenciaCartao = onCall(
       );
     }
 
-    if (pedido.status !== "Aguardando pagamento") {
+    if (!STATUS_PODE_PAGAR.includes(pedido.status)) {
       throw new HttpsError(
         "failed-precondition",
         "Este pedido não está aguardando pagamento."
       );
     }
 
+    await validarHorarioRetirada(pedido.horarioRetirada);
+
+    const accessToken = MP_ACCESS_TOKEN.value();
+
+    // Troca de método (pix -> cartão): cancela o Pix pendente antes de abrir
+    // o checkout do cartão, senão os dois ficam pagáveis ao mesmo tempo.
+    let revisao = pedido.pagamentoRevisao || 0;
+    if (pedido.metodoPagamento && pedido.metodoPagamento !== "CARTAO") {
+      await encerrarTentativaAnterior(pedido, accessToken);
+      revisao += 1;
+    }
+
     const userRecord = await admin.auth().getUser(uid);
     const payerEmail = userRecord.email || "cliente@caffeto.app";
 
-    const total = Number(pedido.total);
-    if (!total || total <= 0) {
-      throw new HttpsError("failed-precondition", "Total do pedido inválido.");
+    const total = await calcularTotalReal(pedido.itens);
+    if (Math.abs(total - Number(pedido.total)) > 0.01) {
+      logger.warn(
+        `Total divergente no pedido ${pedidoId}: recebido ${pedido.total}, real ${total}. Usando o valor real.`
+      );
     }
-
-    const webhookUrl =
-      "https://southamerica-east1-caffeto-a12fe.cloudfunctions.net/mercadopagoWebhook";
-
-    const accessToken = MP_ACCESS_TOKEN.value();
 
     const body = {
       items: [
@@ -193,7 +330,7 @@ exports.criarPreferenciaCartao = onCall(
       ],
       payer: { email: payerEmail },
       external_reference: pedidoId,
-      notification_url: webhookUrl,
+      notification_url: WEBHOOK_URL,
       payment_methods: {
         // Pix já tem fluxo próprio no app; aqui só cartão, sem parcelamento.
         installments: 1,
@@ -211,7 +348,7 @@ exports.criarPreferenciaCartao = onCall(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
-        "X-Idempotency-Key": `card-pref-${pedidoId}`,
+        "X-Idempotency-Key": `card-pref-${pedidoId}-r${revisao}`,
       },
       body: JSON.stringify(body),
     });
@@ -240,8 +377,12 @@ exports.criarPreferenciaCartao = onCall(
     }
 
     await pedidoRef.update({
+      status: "Aguardando pagamento",
+      total,
       mercadoPagoPreferenceId: preference.id,
+      mercadoPagoPaymentId: admin.firestore.FieldValue.delete(),
       metodoPagamento: "CARTAO",
+      pagamentoRevisao: revisao,
     });
 
     return { checkoutUrl };
@@ -249,26 +390,69 @@ exports.criarPreferenciaCartao = onCall(
 );
 
 /**
+ * Valida a assinatura do webhook do Mercado Pago (header x-signature),
+ * conforme https://www.mercadopago.com.br/developers -> Webhooks ->
+ * "Validando a origem das notificações". Sem isso, qualquer pessoa que
+ * souber/adivinhar um payment id pode chamar essa URL diretamente.
+ */
+function assinaturaValida(req, secret) {
+  const signatureHeader = req.headers["x-signature"];
+  const requestId = req.headers["x-request-id"];
+  if (!signatureHeader || !requestId) return false;
+
+  const partes = {};
+  for (const parte of signatureHeader.split(",")) {
+    const [chave, valor] = parte.split("=");
+    if (chave && valor) partes[chave.trim()] = valor.trim();
+  }
+  const { ts, v1 } = partes;
+  if (!ts || !v1) return false;
+
+  const dataId = String(
+    req.body?.data?.id || req.query?.["data.id"] || ""
+  ).toLowerCase();
+  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const hmac = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+
+  const bufA = Buffer.from(hmac);
+  const bufB = Buffer.from(v1);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
  * FUNÇÃO 3 — Webhook do Mercado Pago
  * O Mercado Pago chama essa URL toda vez que o status de um pagamento muda.
  * NUNCA confiamos no conteúdo do POST em si — sempre consultamos a API
  * do Mercado Pago de volta para confirmar o status real (evita fraude).
+ * Só confirma o "OK" depois de processar (se der erro, devolve 5xx pra o
+ * Mercado Pago tentar de novo mais tarde, em vez de perder a notificação).
  */
 exports.mercadopagoWebhook = onRequest(
-  { secrets: [MP_ACCESS_TOKEN], region: "southamerica-east1" },
+  { secrets: [MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET], region: "southamerica-east1" },
   async (req, res) => {
-    // Responde rápido para o Mercado Pago não achar que falhou e reenviar
-    res.status(200).send("OK");
-
     try {
+      const webhookSecret = MP_WEBHOOK_SECRET.value();
+      if (webhookSecret && webhookSecret !== WEBHOOK_SECRET_PENDENTE) {
+        if (!assinaturaValida(req, webhookSecret)) {
+          logger.error("Assinatura do webhook do Mercado Pago inválida.");
+          res.status(401).send("Invalid signature");
+          return;
+        }
+      } else {
+        logger.warn(
+          "MP_WEBHOOK_SECRET não configurado — pulando verificação de assinatura do webhook."
+        );
+      }
+
       const type = req.body?.type || req.query?.type;
       const paymentId = req.body?.data?.id || req.query?.["data.id"];
 
       if (type !== "payment" || !paymentId) {
+        res.status(200).send("OK");
         return;
       }
 
-      // Consulta o status real do pagamento (nunca confia só na notificação)
       const resp = await fetch(`${MP_API}/v1/payments/${paymentId}`, {
         headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN.value()}` },
       });
@@ -276,17 +460,14 @@ exports.mercadopagoWebhook = onRequest(
 
       if (!resp.ok) {
         logger.error("Erro ao consultar pagamento", payment);
-        return;
-      }
-
-      if (payment.status !== "approved") {
-        logger.info(`Pagamento ${paymentId} com status ${payment.status}`);
+        res.status(502).send("Erro ao consultar pagamento");
         return;
       }
 
       const pedidoId = payment.external_reference;
       if (!pedidoId) {
-        logger.error("Pagamento aprovado sem external_reference", paymentId);
+        logger.error("Pagamento sem external_reference", paymentId);
+        res.status(200).send("OK");
         return;
       }
 
@@ -295,23 +476,76 @@ exports.mercadopagoWebhook = onRequest(
 
       if (!pedidoSnap.exists) {
         logger.error(`Pedido ${pedidoId} não encontrado`);
+        res.status(200).send("OK");
         return;
       }
 
-      // Evita processar o mesmo pagamento aprovado duas vezes
-      if (pedidoSnap.data().status === "Aguardando preparo") {
+      const pedidoAtual = pedidoSnap.data();
+
+      if (payment.status === "approved") {
+        // Já processado antes (reentrega da mesma notificação) — no-op.
+        if (pedidoAtual.status === "Aguardando preparo") {
+          res.status(200).send("OK");
+          return;
+        }
+
+        // Esse pagamento aprovado não é o que o pedido está esperando agora
+        // (ex: o cliente trocou de método e essa é uma tentativa antiga) e o
+        // pedido já não está mais aguardando pagamento -> possível cobrança
+        // duplicada. Não mexe no pedido; fica só o alerta pra checar manual.
+        if (
+          pedidoAtual.mercadoPagoPaymentId &&
+          String(pedidoAtual.mercadoPagoPaymentId) !== String(payment.id) &&
+          !STATUS_PODE_PAGAR.includes(pedidoAtual.status)
+        ) {
+          logger.error(
+            `ALERTA: pedido ${pedidoId} recebeu pagamento aprovado ${payment.id} mas já ` +
+              `estava com status "${pedidoAtual.status}" e paymentId ${pedidoAtual.mercadoPagoPaymentId}. ` +
+              "Possível cobrança duplicada — checar manualmente no painel do Mercado Pago."
+          );
+          res.status(200).send("OK");
+          return;
+        }
+
+        await pedidoRef.update({
+          status: "Aguardando preparo",
+          pagoEm: admin.firestore.FieldValue.serverTimestamp(),
+          mercadoPagoPaymentId: payment.id,
+          // A confirmação real de como foi pago vem do próprio Mercado Pago,
+          // não de qual aba o cliente deixou selecionada por último no app.
+          metodoPagamento: payment.payment_method_id === "pix" ? "PIX" : "CARTAO",
+        });
+
+        logger.info(`Pedido ${pedidoId} confirmado e enviado à cozinha`);
+        res.status(200).send("OK");
         return;
       }
 
-      await pedidoRef.update({
-        status: "Aguardando preparo",
-        pagoEm: admin.firestore.FieldValue.serverTimestamp(),
-        mercadoPagoPaymentId: payment.id,
-      });
+      if (["rejected", "cancelled"].includes(payment.status)) {
+        // Só marca como recusado se for a tentativa que o pedido está
+        // esperando agora — assim o cancelamento de uma tentativa antiga
+        // (de quando o cliente trocou de método) não derruba um pedido que
+        // já está sendo pago de outro jeito.
+        if (
+          pedidoAtual.status === "Aguardando pagamento" &&
+          String(pedidoAtual.mercadoPagoPaymentId) === String(payment.id)
+        ) {
+          await pedidoRef.update({ status: "Pagamento recusado" });
+          logger.info(
+            `Pedido ${pedidoId} com pagamento ${payment.status} — status atualizado`
+          );
+        }
+        res.status(200).send("OK");
+        return;
+      }
 
-      logger.info(`Pedido ${pedidoId} confirmado e enviado à cozinha`);
+      logger.info(`Pagamento ${paymentId} com status ${payment.status}, nada a fazer`);
+      res.status(200).send("OK");
     } catch (err) {
       logger.error("Erro no webhook do Mercado Pago", err);
+      // 5xx faz o Mercado Pago reenviar a notificação mais tarde, em vez de
+      // considerar entregue e desistir.
+      res.status(500).send("Erro interno");
     }
   }
 );

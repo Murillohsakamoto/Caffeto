@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -17,6 +18,14 @@ late final FirebaseFirestore db;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // No Android/iOS a sessão já fica salva sozinha entre reinícios do app —
+  // é o comportamento padrão do SDK nativo do Firebase Auth. No navegador
+  // (web) isso depende da persistência configurada, então deixamos
+  // explícito aqui pra garantir que ninguém precise logar de novo a cada
+  // vez que abrir a aba/fechar o navegador.
+  if (kIsWeb) {
+    await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+  }
   db = FirebaseFirestore.instanceFor(
     app: Firebase.app(),
     databaseId: 'caffeto',
@@ -75,7 +84,9 @@ class _AuthGate extends StatelessWidget {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final isAdmin = data?['admin'] == true;
         final isCozinha = data?['cozinha'] == true;
-        if (isAdmin || isCozinha) return const CozinhaScreen();
+        if (isAdmin || isCozinha) {
+          return CozinhaScreen(isRoot: true, isAdmin: isAdmin);
+        }
         return const HomeScreen();
       },
     );

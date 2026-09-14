@@ -66,33 +66,50 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.status == 'Aguardando pagamento' &&
         request.resource.data.horarioRetirada is string &&
-        request.resource.data.horarioRetirada.size() > 0;
+        request.resource.data.horarioRetirada.size() > 0 &&
+        get(/databases/$(database)/documents/horarios_retirada/$(request.resource.data.horarioRetirada))
+          .data.get('ativo', false) == true;
 
       allow read: if isSignedIn() &&
         (resource.data.userId == request.auth.uid || isAdmin() || isMaster() || isCozinha());
 
-      // O dono do pedido só pode alterar campos que não afetam o status,
-      // o valor do pagamento nem o horário de retirada já escolhido.
-      // Confirmar pagamento é feito exclusivamente pela Cloud Function
-      // (Admin SDK, que ignora estas regras) via webhook do Mercado Pago.
-      // A cozinha só pode avançar o status do pedido (preparo/pronto/entrega),
-      // nunca mudar valor, dono, horário de retirada ou dados do pagamento.
+      // Só essas transições de status são válidas da cozinha pra frente —
+      // não dá pra pular etapa nem voltar o pedido pra trás.
+      function transicaoValidaCozinha() {
+        return
+          (resource.data.status == 'Aguardando preparo' && request.resource.data.status == 'Em preparo') ||
+          (resource.data.status == 'Em preparo' && request.resource.data.status == 'Pronto') ||
+          (resource.data.status == 'Pronto' && request.resource.data.status == 'Entregue');
+      }
+
+      // O dono do pedido só pode alterar campos que não afetam o status, o
+      // valor, o horário de retirada nem os dados de pagamento — tudo isso é
+      // gerenciado exclusivamente pelas Cloud Functions (Admin SDK, que
+      // ignora estas regras) via chamada direta ou webhook do Mercado Pago.
+      // A cozinha só pode avançar o status do pedido, também sem tocar em
+      // valor, dono, horário de retirada ou dados de pagamento.
       allow update: if isAdmin() || isMaster() ||
         (isCozinha() &&
          request.resource.data.userId == resource.data.userId &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
+         request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
+         request.resource.data.get('pagamentoRevisao', null) == resource.data.get('pagamentoRevisao', null) &&
          request.resource.data.get('mercadoPagoPaymentId', null) ==
            resource.data.get('mercadoPagoPaymentId', null) &&
          request.resource.data.get('mercadoPagoPreferenceId', null) ==
            resource.data.get('mercadoPagoPreferenceId', null) &&
-         request.resource.data.status in ['Em preparo', 'Pronto', 'Entregue']) ||
+         transicaoValidaCozinha()) ||
         (isSignedIn() && resource.data.userId == request.auth.uid &&
          request.resource.data.status == resource.data.status &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
+         request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
+         request.resource.data.get('pagamentoRevisao', null) == resource.data.get('pagamentoRevisao', null) &&
          request.resource.data.get('mercadoPagoPaymentId', null) ==
-           resource.data.get('mercadoPagoPaymentId', null));
+           resource.data.get('mercadoPagoPaymentId', null) &&
+         request.resource.data.get('mercadoPagoPreferenceId', null) ==
+           resource.data.get('mercadoPagoPreferenceId', null));
 
       allow delete: if isMaster();
     }

@@ -52,18 +52,18 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCcyTvBmAkL4-nYsYaw87N3E1hv0taxmuI',
-    appId: '1:792481109924:android:b259d84725327f317bd331',
+    appId: '1:792481109924:android:2769784a250a06c07bd331',
     messagingSenderId: '792481109924',
     projectId: 'caffeto-a12fe',
     storageBucket: 'caffeto-a12fe.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDRcdeia20UOGbOK5f8eKYkFMuS-TdbCK8',
-    appId: '1:792481109924:ios:7d8b9ee375ed40ef7bd331',
+    appId: '1:792481109924:ios:e05d4af4be0324d07bd331',
     messagingSenderId: '792481109924',
     projectId: 'caffeto-a12fe',
     storageBucket: 'caffeto-a12fe.firebasestorage.app',
-    iosBundleId: 'com.example.caffeto',
+    iosBundleId: 'com.caffeto.app',
   );
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyDRcdeia20UOGbOK5f8eKYkFMuS-TdbCK8',
