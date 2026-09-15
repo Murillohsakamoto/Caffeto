@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
@@ -246,6 +247,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
             _buildOption(Icons.notifications_outlined, 'Notificações',
                 onTap: () {}),
             _buildOption(Icons.help_outline, 'Ajuda', onTap: () {}),
+            _buildOption(
+              Icons.privacy_tip_outlined,
+              'Política de Privacidade',
+              onTap: () => launchUrl(
+                Uri.parse('https://caffeto-a12fe.web.app/privacidade'),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
             if (_isAdmin || _isCozinha)
               _buildOption(
                 Icons.soup_kitchen_outlined,

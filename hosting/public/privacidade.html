@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidade — Caffeto</title>
+<link rel="icon" href="mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF7F1;
+    --surface:#F5EEE1;
+    --surface-2:#ECE0CC;
+    --text:#251A12;
+    --text-muted:#6B5D4F;
+    --accent:#9C6B32;
+    --accent-strong:#6B3E1D;
+    --border:#E2D3B8;
+    --warn-bg:#F6E9D2;
+    --warn-border:#D8A24A;
+    --warn-text:#6B3E1D;
+    --shadow: 0 1px 2px rgba(37,26,18,.06), 0 8px 24px rgba(37,26,18,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#17110D;
+      --surface:#211812;
+      --surface-2:#2B2018;
+      --text:#F3E9DB;
+      --text-muted:#BBA792;
+      --accent:#E3B36B;
+      --accent-strong:#F0C583;
+      --border:#3A2C20;
+      --warn-bg:#3A2C14;
+      --warn-border:#B98429;
+      --warn-text:#F0C583;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17110D;
+    --surface:#211812;
+    --surface-2:#2B2018;
+    --text:#F3E9DB;
+    --text-muted:#BBA792;
+    --accent:#E3B36B;
+    --accent-strong:#F0C583;
+    --border:#3A2C20;
+    --warn-bg:#3A2C14;
+    --warn-border:#B98429;
+    --warn-text:#F0C583;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  html{ color-scheme: light dark; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Work Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:16px;
+    line-height:1.65;
+    padding-inline:20px;
+    padding-block:32px 64px;
+  }
+  a{color:var(--accent);}
+  h1,h2,h3{
+    font-family:"Fraunces",Georgia,"Times New Roman",serif;
+    color:var(--accent-strong);
+    text-wrap:balance;
+    line-height:1.2;
+  }
+
+  .page{
+    max-width:1040px;
+    margin-inline:auto;
+  }
+
+  .masthead{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding-bottom:28px;
+    margin-bottom:28px;
+    border-bottom:1px solid var(--border);
+    flex-wrap:wrap;
+  }
+  .masthead img{
+    width:56px;
+    height:56px;
+    object-fit:contain;
+    flex-shrink:0;
+  }
+  .masthead .titles{flex:1 1 auto; min-width:200px;}
+  .masthead h1{
+    font-size:clamp(1.5rem, 1.1rem + 1.4vw, 2.1rem);
+    font-weight:600;
+    margin:0 0 2px;
+  }
+  .masthead .meta{
+    color:var(--text-muted);
+    font-size:.9rem;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    background:var(--surface-2);
+    color:var(--accent-strong);
+    border:1px solid var(--border);
+    border-radius:99px;
+    padding:3px 12px;
+    font-size:.78rem;
+    font-weight:600;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+    white-space:nowrap;
+  }
+
+  .layout{
+    display:grid;
+    grid-template-columns:220px minmax(0,1fr);
+    gap:48px;
+    align-items:start;
+  }
+  @media (max-width:860px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  nav.toc{
+    position:sticky;
+    top:24px;
+  }
+  @media (max-width:860px){
+    nav.toc{
+      position:static;
+      display:flex;
+      gap:8px;
+      overflow-x:auto;
+      padding-bottom:8px;
+      margin-bottom:8px;
+      -webkit-overflow-scrolling:touch;
+    }
+    nav.toc a{white-space:nowrap;}
+  }
+  nav.toc .toc-label{
+    font-size:.72rem;
+    font-weight:600;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-bottom:10px;
+    display:block;
+  }
+  @media (max-width:860px){ nav.toc .toc-label{display:none;} }
+  nav.toc ol{
+    list-style:none;
+    margin:0; padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  @media (max-width:860px){ nav.toc ol{flex-direction:row;} }
+  nav.toc a{
+    display:block;
+    padding:7px 10px;
+    border-radius:8px;
+    color:var(--text-muted);
+    text-decoration:none;
+    font-size:.88rem;
+    border:1px solid transparent;
+  }
+  @media (max-width:860px){
+    nav.toc a{
+      background:var(--surface);
+      border-color:var(--border);
+    }
+  }
+  nav.toc a:hover{background:var(--surface); color:var(--text);}
+
+  main{max-width:680px;}
+
+  section{
+    padding-block:22px;
+    border-bottom:1px solid var(--border);
+    scroll-margin-top:20px;
+  }
+  section:last-of-type{border-bottom:none;}
+  section h2{
+    font-size:1.3rem;
+    font-weight:600;
+    margin:0 0 12px;
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  section h2 .num{
+    font-variant-numeric:tabular-nums;
+    color:var(--accent);
+    font-size:.95rem;
+    font-weight:600;
+  }
+  section p{margin:0 0 12px;}
+  section p:last-child{margin-bottom:0;}
+  section ul{margin:0 0 12px; padding-left:1.2em;}
+  section li{margin-bottom:6px;}
+  section li:last-child{margin-bottom:0;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px 18px;
+    margin:14px 0;
+  }
+  .card h3{
+    font-size:.95rem;
+    font-weight:600;
+    margin:0 0 6px;
+    color:var(--text);
+    font-family:"Work Sans",sans-serif;
+  }
+  .card p{font-size:.92rem; color:var(--text-muted); margin:0;}
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin:14px 0;
+    font-size:.9rem;
+  }
+  th,td{
+    text-align:left;
+    padding:9px 10px;
+    border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  th{
+    color:var(--text-muted);
+    font-weight:600;
+    font-size:.78rem;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+
+  footer{
+    margin-top:40px;
+    padding-top:24px;
+    border-top:1px solid var(--border);
+    color:var(--text-muted);
+    font-size:.85rem;
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="masthead">
+    <img src="mark.png" alt="Caffeto">
+    <div class="titles">
+      <h1>Política de Privacidade</h1>
+      <div class="meta">
+        <span>Caffeto — cafeteria &amp; aplicativo de pedidos</span>
+        <span class="badge">v1.0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Sumário">
+      <span class="toc-label">Nesta página</span>
+      <ol>
+        <li><a href="#quem-somos">1. Quem somos</a></li>
+        <li><a href="#dados-coletados">2. Dados que coletamos</a></li>
+        <li><a href="#como-usamos">3. Como usamos os dados</a></li>
+        <li><a href="#compartilhamento">4. Com quem compartilhamos</a></li>
+        <li><a href="#pagamentos">5. Pagamentos</a></li>
+        <li><a href="#retencao">6. Por quanto tempo guardamos</a></li>
+        <li><a href="#seguranca">7. Segurança</a></li>
+        <li><a href="#direitos">8. Seus direitos (LGPD)</a></li>
+        <li><a href="#menores">9. Menores de idade</a></li>
+        <li><a href="#alteracoes">10. Alterações nesta política</a></li>
+        <li><a href="#contato">11. Contato</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <section id="quem-somos">
+        <h2><span class="num">1</span> Quem somos</h2>
+        <p>
+          Esta política descreve como a <strong>Caffeto</strong>
+          (RC Carbonell Comércio e Serviços LTDA, CNPJ 04.377.753/0004-14) coleta, usa e protege
+          os dados de quem usa o aplicativo Caffeto para fazer pedidos de retirada na nossa cafeteria.
+        </p>
+        <p>
+          Somos os controladores dos dados pessoais tratados pelo aplicativo, nos termos da
+          Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD).
+        </p>
+      </section>
+
+      <section id="dados-coletados">
+        <h2><span class="num">2</span> Dados que coletamos</h2>
+        <p>Coletamos apenas o que é necessário para você fazer e acompanhar um pedido:</p>
+        <table>
+          <thead>
+            <tr><th>Dado</th><th>De onde vem</th><th>Para quê</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Nome e e-mail</td>
+              <td>Cadastro (e-mail/senha) ou login com Google</td>
+              <td>Identificar sua conta e falar com você sobre pedidos</td>
+            </tr>
+            <tr>
+              <td>Foto de perfil</td>
+              <td>Sua conta Google, ou uma foto que você envia (câmera/galeria)</td>
+              <td>Exibida no seu perfil dentro do app</td>
+            </tr>
+            <tr>
+              <td>Endereços salvos</td>
+              <td>Cadastrados por você no app</td>
+              <td>Preencher mais rápido em pedidos futuros</td>
+            </tr>
+            <tr>
+              <td>Histórico de pedidos</td>
+              <td>Gerado quando você faz um pedido (itens, valor, horário de retirada escolhido, status)</td>
+              <td>Preparar seu pedido e mostrar o histórico em "Meus Pedidos"</td>
+            </tr>
+            <tr>
+              <td>Método e confirmação de pagamento</td>
+              <td>Retornado pelo Mercado Pago após o pagamento</td>
+              <td>Confirmar que o pedido foi pago e liberá-lo para a cozinha</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>Não coletamos</strong> localização, dados de navegação para publicidade, nem número de
+          cartão de crédito/débito — isso nunca passa pelo nosso aplicativo ou servidores (veja a seção 5).
+        </p>
+      </section>
+
+      <section id="como-usamos">
+        <h2><span class="num">3</span> Como usamos os dados</h2>
+        <ul>
+          <li>Criar e autenticar sua conta no aplicativo;</li>
+          <li>Processar e acompanhar seus pedidos, do pagamento até a retirada no balcão;</li>
+          <li>Calcular horários de retirada disponíveis com base no que você pediu;</li>
+          <li>Dar suporte quando você entra em contato sobre um pedido;</li>
+          <li>Cumprir obrigações legais e fiscais (por exemplo, guardar registros de vendas).</li>
+        </ul>
+        <p>Não usamos seus dados para anúncios, e não vendemos dados a terceiros.</p>
+      </section>
+
+      <section id="compartilhamento">
+        <h2><span class="num">4</span> Com quem compartilhamos</h2>
+        <p>Compartilhamos dados apenas com prestadores de serviço que operam o aplicativo por trás dos panos:</p>
+        <div class="card">
+          <h3>Google Firebase</h3>
+          <p>
+            Login, banco de dados dos pedidos e do cardápio, armazenamento de arquivos (foto de perfil)
+            e as funções de backend que processam pagamento rodam sobre a infraestrutura do Google Firebase.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Mercado Pago</h3>
+          <p>
+            O pagamento em si (Pix ou cartão) é processado inteiramente pelo Mercado Pago. Recebemos de
+            volta apenas a confirmação de que o pagamento foi aprovado — nunca o número do seu cartão.
+          </p>
+        </div>
+      </section>
+
+      <section id="pagamentos">
+        <h2><span class="num">5</span> Pagamentos</h2>
+        <p>
+          Pagamentos por Pix são processados diretamente pelo Mercado Pago dentro do app.
+          Pagamentos por cartão abrem uma página seguríssima hospedada pelo próprio Mercado Pago
+          para você digitar os dados do cartão — essa tela não pertence ao nosso aplicativo, e os
+          dados do cartão nunca chegam até nós. Consulte a
+          <a href="https://www.mercadopago.com.br/privacy/policy" target="_blank" rel="noopener">política de privacidade do Mercado Pago</a>
+          para saber como eles tratam esses dados.
+        </p>
+      </section>
+
+      <section id="retencao">
+        <h2><span class="num">6</span> Por quanto tempo guardamos</h2>
+        <p>
+          Guardamos os dados da sua conta enquanto ela existir. Se você excluir sua conta, removemos
+          seus dados pessoais, exceto o histórico de pedidos que formos legalmente obrigados a manter
+          para fins fiscais e contábeis pelo prazo exigido pela legislação brasileira.
+        </p>
+      </section>
+
+      <section id="seguranca">
+        <h2><span class="num">7</span> Segurança</h2>
+        <p>
+          O acesso aos seus dados é protegido por regras de segurança do Firebase: cada pessoa só
+          enxerga seus próprios pedidos e dados de perfil, exceto a equipe da cozinha (que só vê pedidos
+          em andamento, nunca dados de outras contas) e a administração da loja.
+        </p>
+      </section>
+
+      <section id="direitos">
+        <h2><span class="num">8</span> Seus direitos (LGPD)</h2>
+        <p>Como titular dos dados, você pode a qualquer momento solicitar:</p>
+        <ul>
+          <li>Confirmação de que tratamos seus dados, e acesso a eles;</li>
+          <li>Correção de dados incompletos, inexatos ou desatualizados;</li>
+          <li>Anonimização, bloqueio ou eliminação de dados desnecessários;</li>
+          <li>Portabilidade dos seus dados para outro fornecedor;</li>
+          <li>Eliminação dos dados tratados com o seu consentimento;</li>
+          <li>Informação sobre com quem compartilhamos seus dados;</li>
+          <li>Revogação do consentimento, quando aplicável.</li>
+        </ul>
+        <p>Para exercer qualquer um desses direitos, veja os contatos na seção 11.</p>
+      </section>
+
+      <section id="menores">
+        <h2><span class="num">9</span> Menores de idade</h2>
+        <p>
+          O aplicativo não é direcionado a crianças. O cadastro de conta e a realização de pedidos
+          devem ser feitos por uma pessoa maior de idade ou com autorização de um responsável.
+        </p>
+      </section>
+
+      <section id="alteracoes">
+        <h2><span class="num">10</span> Alterações nesta política</h2>
+        <p>
+          Podemos atualizar esta política quando o aplicativo ganhar novas funcionalidades. A data da
+          última atualização sempre aparece no topo desta página. Mudanças relevantes serão avisadas
+          dentro do próprio aplicativo.
+        </p>
+      </section>
+
+      <section id="contato">
+        <h2><span class="num">11</span> Contato</h2>
+        <p>
+          Dúvidas sobre esta política ou sobre seus dados podem ser enviadas para
+          <a href="mailto:vitellipires@gmail.com">vitellipires@gmail.com</a>.
+        </p>
+      </section>
+
+      <footer>
+        <span>Caffeto — Política de Privacidade</span>
+        <span>Última atualização: 14 de setembro de 2026</span>
+      </footer>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>
