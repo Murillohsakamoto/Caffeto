@@ -12,6 +12,7 @@ import 'sacola_screen.dart';
 import 'perfil_screen.dart';
 import 'cart_controller.dart';
 import 'cozinha_screen.dart';
+import 'admin_dashboard_screen.dart';
 
 late final FirebaseFirestore db;
 
@@ -84,9 +85,8 @@ class _AuthGate extends StatelessWidget {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final isAdmin = data?['admin'] == true;
         final isCozinha = data?['cozinha'] == true;
-        if (isAdmin || isCozinha) {
-          return CozinhaScreen(isRoot: true, isAdmin: isAdmin);
-        }
+        if (isAdmin) return const AdminDashboardScreen();
+        if (isCozinha) return const CozinhaScreen(isRoot: true);
         return const HomeScreen();
       },
     );

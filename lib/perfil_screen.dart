@@ -7,9 +7,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'cozinha_screen.dart';
-import 'gerenciar_cardapio_screen.dart';
-import 'horarios_retirada_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -21,8 +18,6 @@ class PerfilScreen extends StatefulWidget {
 class _PerfilScreenState extends State<PerfilScreen> {
   List<Map<String, String>> _enderecos = [];
   bool _uploadingPhoto = false;
-  bool _isAdmin = false;
-  bool _isCozinha = false;
 
   @override
   void initState() {
@@ -45,8 +40,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
           .toList();
       setState(() {
         _enderecos = list;
-        _isAdmin = data['admin'] == true;
-        _isCozinha = data['cozinha'] == true;
       });
     }
   }
@@ -255,40 +248,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 mode: LaunchMode.externalApplication,
               ),
             ),
-            if (_isAdmin || _isCozinha)
-              _buildOption(
-                Icons.soup_kitchen_outlined,
-                'Modo Cozinha',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const CozinhaScreen()),
-                ),
-                highlight: true,
-              ),
-            if (_isAdmin) ...[
-              _buildOption(
-                Icons.timer_outlined,
-                'Tempo estimado de preparo',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const GerenciarCardapioScreen()),
-                ),
-                highlight: true,
-              ),
-              _buildOption(
-                Icons.schedule_outlined,
-                'Horários de retirada',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const HorariosRetiradaScreen()),
-                ),
-                highlight: true,
-              ),
-            ],
-
             const SizedBox(height: 16),
             const Divider(color: Color(0xFFEEEEEE)),
             const SizedBox(height: 16),

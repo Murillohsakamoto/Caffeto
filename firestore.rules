@@ -58,7 +58,7 @@ service cloud.firestore {
 
     match /parceiros/{partnerId} {
       allow read: if isSignedIn();
-      allow write: if isMaster();
+      allow write: if isAdmin() || isMaster();
     }
 
     match /pedidos/{pedidoId} {
