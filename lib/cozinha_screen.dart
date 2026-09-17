@@ -519,26 +519,19 @@ class _OrderCardState extends State<_OrderCard> {
       }
     }
 
-    if (horario == null && countdownText == null) {
-      return const SizedBox.shrink();
-    }
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          if (horario != null)
-            Text(
-              'Retirada às $horario',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF9E9E9E),
-              ),
-            )
-          else
-            const SizedBox.shrink(),
+          Text(
+            horario != null ? 'Retirada às $horario' : 'Retirada imediata',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF9E9E9E),
+            ),
+          ),
           if (countdownText != null)
             Container(
               padding:

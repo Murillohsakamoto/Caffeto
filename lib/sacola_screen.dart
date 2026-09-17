@@ -20,6 +20,9 @@ class _SacolaScreenState extends State<SacolaScreen> {
   List<String> _horariosDisponiveis = [];
   String? _horarioEscolhido;
   int _tempoEstimadoMin = 15;
+  // true = retirar assim que o pedido ficar pronto (sem hora marcada);
+  // false = cliente escolheu um horário específico da grade.
+  bool _retiradaImediata = true;
 
   @override
   void initState() {
@@ -138,8 +141,8 @@ class _SacolaScreenState extends State<SacolaScreen> {
     if (_finalizando) return; // trava contra duplo toque antes do rebuild
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final horario = _horarioEscolhido;
-    if (horario == null) return;
+    final horario = _retiradaImediata ? null : _horarioEscolhido;
+    if (!_retiradaImediata && horario == null) return;
 
     final cart = CartController.instance;
     final total = cart.total;
@@ -206,7 +209,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
         ),
         content: Text(
           'Total: R\$ ${CartController.instance.total.toStringAsFixed(2).replaceAll('.', ',')}\n'
-          'Retirada às $_horarioEscolhido\n\n'
+          '${_retiradaImediata ? 'Retirada imediata (~${_tempoEstimadoMin}min)' : 'Retirada às $_horarioEscolhido'}\n\n'
           'Continuar para o pagamento?',
           style: const TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
         ),
@@ -243,6 +246,57 @@ class _SacolaScreenState extends State<SacolaScreen> {
     );
   }
 
+  Widget _buildModoRetiradaToggle() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildModoRetiradaChip(
+              label: 'Retirada imediata',
+              selected: _retiradaImediata,
+              onTap: () => setState(() => _retiradaImediata = true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildModoRetiradaChip(
+              label: 'Escolher horário',
+              selected: !_retiradaImediata,
+              onTap: () => setState(() => _retiradaImediata = false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModoRetiradaChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFC8A96E) : const Color(0xFFF5F0E8),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : const Color(0xFF1A1A1A),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHorarioRetirada() {
     if (_carregandoHorarios) {
       return const Padding(
@@ -254,6 +308,16 @@ class _SacolaScreenState extends State<SacolaScreen> {
             child: CircularProgressIndicator(
                 strokeWidth: 2, color: Color(0xFFC8A96E)),
           ),
+        ),
+      );
+    }
+
+    if (_retiradaImediata) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          'Retirada assim que o pedido ficar pronto (tempo estimado: ${_tempoEstimadoMin}min).',
+          style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
         ),
       );
     }
@@ -525,6 +589,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
                   ),
                   child: Column(
                     children: [
+                      _buildModoRetiradaToggle(),
                       _buildHorarioRetirada(),
                       const SizedBox(height: 12),
                       Row(
@@ -552,7 +617,8 @@ class _SacolaScreenState extends State<SacolaScreen> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: (_finalizando || _horarioEscolhido == null)
+                          onPressed: (_finalizando ||
+                                  (!_retiradaImediata && _horarioEscolhido == null))
                               ? null
                               : _confirmarFinalizacao,
                           style: ElevatedButton.styleFrom(

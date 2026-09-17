@@ -61,14 +61,22 @@ service cloud.firestore {
       allow write: if isAdmin() || isMaster();
     }
 
+    // Retirada imediata: horarioRetirada vem null (sem hora marcada, segue o
+    // ciclo normal assim que ficar pronto). Retirada agendada: precisa ser um
+    // slot ativo da grade cadastrada pelo admin.
+    function horarioRetiradaValido() {
+      return request.resource.data.get('horarioRetirada', null) == null ||
+        (request.resource.data.horarioRetirada is string &&
+         request.resource.data.horarioRetirada.size() > 0 &&
+         get(/databases/$(database)/documents/horarios_retirada/$(request.resource.data.horarioRetirada))
+           .data.get('ativo', false) == true);
+    }
+
     match /pedidos/{pedidoId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.status == 'Aguardando pagamento' &&
-        request.resource.data.horarioRetirada is string &&
-        request.resource.data.horarioRetirada.size() > 0 &&
-        get(/databases/$(database)/documents/horarios_retirada/$(request.resource.data.horarioRetirada))
-          .data.get('ativo', false) == true;
+        horarioRetiradaValido();
 
       allow read: if isSignedIn() &&
         (resource.data.userId == request.auth.uid || isAdmin() || isMaster() || isCozinha());

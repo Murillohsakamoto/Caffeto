@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onRequest } = require("firebase-functions/v2/https");
+const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
@@ -70,15 +71,11 @@ async function calcularTotalReal(itens) {
 
 /**
  * Confere que o horário de retirada escolhido realmente existe na grade
- * cadastrada pelo admin e está ativo.
+ * cadastrada pelo admin e está ativo. Pedido de retirada imediata não tem
+ * horarioRetirada (null) — nada pra validar nesse caso.
  */
 async function validarHorarioRetirada(horarioRetirada) {
-  if (!horarioRetirada) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Pedido sem horário de retirada."
-    );
-  }
+  if (!horarioRetirada) return;
   const doc = await db.collection("horarios_retirada").doc(horarioRetirada).get();
   if (!doc.exists || doc.data().ativo !== true) {
     throw new HttpsError(
@@ -585,6 +582,46 @@ exports.mercadopagoWebhook = onRequest(
       // 5xx faz o Mercado Pago reenviar a notificação mais tarde, em vez de
       // considerar entregue e desistir.
       res.status(500).send("Erro interno");
+    }
+  }
+);
+
+/**
+ * FUNÇÃO 5 — Notificar cliente quando o pedido fica pronto
+ * Dispara quando a cozinha muda o status do pedido para "Pronto" (só nessa
+ * transição — outras mudanças de status ou edições não geram push). Manda
+ * a notificação pra todos os tokens FCM salvos em usuarios/{userId},
+ * cadastrados pelo app (NotificationsService) a cada login/refresh de
+ * token.
+ */
+exports.notificarPedidoPronto = onDocumentUpdated(
+  { document: "pedidos/{pedidoId}", database: "caffeto", region: "southamerica-east1" },
+  async (event) => {
+    const antes = event.data.before.data();
+    const depois = event.data.after.data();
+    if (antes.status === "Pronto" || depois.status !== "Pronto") return;
+
+    const usuarioSnap = await db.collection("usuarios").doc(depois.userId).get();
+    const tokens = usuarioSnap.data()?.fcmTokens;
+    if (!Array.isArray(tokens) || tokens.length === 0) return;
+
+    const resposta = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: "Pedido pronto! ☕",
+        body: "Pode retirar no balcão da Caffeto.",
+      },
+    });
+
+    // Token inválido/expirado (app desinstalado, etc.) — remove pra não
+    // acumular lixo e não tentar de novo nas próximas notificações.
+    const tokensInvalidos = resposta.responses
+      .map((r, i) => (r.success ? null : tokens[i]))
+      .filter(Boolean);
+    if (tokensInvalidos.length > 0) {
+      await usuarioSnap.ref.update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensInvalidos),
+      });
     }
   }
 );
