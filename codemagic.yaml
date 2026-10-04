@@ -1,7 +1,7 @@
 # Codemagic: monta o app iOS num Mac na nuvem e envia para o App Store Connect.
 # Pré-requisitos (feitos uma vez no site do Codemagic):
 #   1. Teams > Integrations > Developer Portal: conectar a chave de API da Apple
-#      com o nome exato "Caffeto ASC".
+#      com o nome exato "Codemagic".
 #   2. Teams > Code signing identities > iOS certificates: gerar o certificado
 #      "Apple Distribution" (botão "Generate certificate").
 workflows:
@@ -10,7 +10,7 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Caffeto ASC
+      app_store_connect: Codemagic
     environment:
       flutter: stable
       xcode: latest
