@@ -20,6 +20,8 @@ dependencies:
   cached_network_image: ^3.3.0
   image_picker: ^1.1.2
   url_launcher: ^6.3.0
+  sign_in_with_apple: ^6.1.4
+  crypto: ^3.0.5
 
 dev_dependencies:
   flutter_test:
