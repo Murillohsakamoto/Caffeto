@@ -134,6 +134,45 @@ async function encerrarTentativaAnterior(pedido, accessToken) {
 }
 
 /**
+ * FUNÇÃO 0 — Excluir conta
+ * Chamada pelo app quando o cliente pede pra excluir a própria conta
+ * (exigência da Apple desde 2022). Roda com Admin SDK porque:
+ * 1) apagar o usuário do Firebase Auth direto pelo app exige login
+ *    "recente" (senão a API recusa) — aqui não tem essa exigência;
+ * 2) precisa limpar dados em mais de um lugar (Firestore + Storage)
+ *    antes de derrubar a conta.
+ * O histórico de pedidos é mantido (obrigação fiscal, já avisado na
+ * Política de Privacidade), só o perfil e a foto são removidos.
+ */
+exports.excluirConta = onCall(
+  { region: "southamerica-east1" },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "É preciso estar logado.");
+    }
+
+    try {
+      await db.collection("usuarios").doc(uid).delete();
+    } catch (err) {
+      logger.warn(`Erro ao apagar usuarios/${uid}`, err);
+    }
+
+    try {
+      await admin.storage().bucket().file(`avatars/${uid}.jpg`).delete();
+    } catch (err) {
+      // Sem problema se não existir foto
+      logger.info(`Sem avatar pra apagar de ${uid} (ou já apagado)`);
+    }
+
+    await admin.auth().deleteUser(uid);
+    logger.info(`Conta ${uid} excluída a pedido do usuário`);
+
+    return { ok: true };
+  }
+);
+
+/**
  * FUNÇÃO 1 — Criar pagamento Pix
  * Chamada pelo app Flutter (via cloud_functions) quando o cliente
  * escolhe pagar com Pix.
