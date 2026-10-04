@@ -9,6 +9,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
+import 'main.dart' show db;
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -32,7 +33,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _carregarEnderecos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance
+    final doc = await db
         .collection('usuarios')
         .doc(uid)
         .get();
@@ -53,7 +54,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _salvarEnderecos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await FirebaseFirestore.instance
+    await db
         .collection('usuarios')
         .doc(uid)
         .set({'enderecos': _enderecos}, SetOptions(merge: true));
@@ -600,7 +601,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 child: FutureBuilder<QuerySnapshot>(
                   // Requer índice composto em (userId, criadoEm desc)
                   // O Firebase mostrará um link para criar automaticamente
-                  future: FirebaseFirestore.instance
+                  future: db
                       .collection('pedidos')
                       .where('userId', isEqualTo: uid)
                       .orderBy('criadoEm', descending: true)

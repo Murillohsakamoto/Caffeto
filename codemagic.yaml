@@ -42,3 +42,45 @@ workflows:
         auth: integration
         submit_to_testflight: false
         submit_to_app_store: false   # o envio para análise é feito manualmente, depois de revisar a ficha
+
+  # Tira os prints da App Store num iPhone virtual de 6,9" (1320x2868).
+  # Pré-requisito: no app do Codemagic, aba "Environment variables", grupo
+  # "conta_teste" com TEST_EMAIL e TEST_PASSWORD (marcados como Secret).
+  ios-prints:
+    name: iOS - Prints da loja
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - conta_teste
+    triggering:
+      events: []
+    scripts:
+      - name: Baixar pacotes do Flutter
+        script: flutter pub get
+      - name: Ligar iPhone Pro Max virtual
+        script: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devs = [d for rt, ds in json.load(sys.stdin)['devices'].items() if 'iOS' in rt for d in ds if d['name'].endswith('Pro Max')]
+          print(devs[-1]['udid'])")
+          echo "Simulador: $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
+          echo "SIM_UDID=$UDID" >> $CM_ENV
+      - name: Tirar os prints
+        script: |
+          mkdir -p screenshots
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/prints_loja_test.dart \
+            -d "$SIM_UDID" \
+            --dart-define=TEST_EMAIL="$TEST_EMAIL" \
+            --dart-define=TEST_PASSWORD="$TEST_PASSWORD"
+          ls -la screenshots
+    artifacts:
+      - screenshots/*.png
