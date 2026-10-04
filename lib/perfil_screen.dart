@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
@@ -85,6 +86,63 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _signOut() async {
     await FirebaseAuth.instance.signOut();
     // authStateChanges em CaffetoApp cuida da navegação
+  }
+
+  Future<void> _excluirConta() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Excluir conta',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        content: const Text(
+          'Isso apaga seu perfil, foto e endereços salvos permanentemente. '
+          'Não é possível desfazer. Seu histórico de pedidos é mantido só '
+          'pelo tempo exigido por lei (motivo fiscal), sem ficar mais '
+          'associado à sua conta.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: Color(0xFF9E9E9E))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              elevation: 0,
+            ),
+            child: const Text('Excluir', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: Color(0xFFC8A96E))),
+    );
+
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+              region: 'southamerica-east1')
+          .httpsCallable('excluirConta');
+      await callable.call();
+      await FirebaseAuth.instance.signOut();
+      // authStateChanges em CaffetoApp cuida da navegação de volta ao login
+    } catch (_) {
+      if (mounted) {
+        Navigator.pop(context); // fecha o loading
+        _showSnack('Não foi possível excluir a conta. Tente novamente.');
+      }
+    }
   }
 
   @override
@@ -245,6 +303,18 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     fontWeight: FontWeight.w600,
                     color: Color(0xFFC8A96E),
                   ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _excluirConta,
+              child: const Text(
+                'Excluir conta',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF9E9E9E),
                 ),
               ),
             ),
