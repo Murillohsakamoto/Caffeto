@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
 import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
 import 'parceiros_screen.dart';
+import 'notifications_service.dart';
 
 const _statusPagos = ['Aguardando preparo', 'Em preparo', 'Pronto', 'Entregue'];
 
@@ -43,7 +43,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
-    if (confirmar == true) await FirebaseAuth.instance.signOut();
+    if (confirmar == true) await NotificationsService.instance.signOut();
   }
 
   @override

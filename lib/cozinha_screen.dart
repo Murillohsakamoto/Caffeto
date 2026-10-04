@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
+import 'notifications_service.dart';
 
 const _prazoRetirada = Duration(minutes: 20);
 
@@ -44,7 +44,7 @@ class CozinhaScreen extends StatelessWidget {
       ),
     );
     if (confirmar == true) {
-      await FirebaseAuth.instance.signOut();
+      await NotificationsService.instance.signOut();
       // authStateChanges em CaffetoApp cuida da navegação de volta ao login
     }
   }

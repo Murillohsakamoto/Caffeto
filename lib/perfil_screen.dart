@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'main.dart';
+import 'notifications_service.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -67,7 +69,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final ref = FirebaseStorage.instance.ref('avatars/$uid.jpg');
-      await ref.putFile(File(image.path));
+      if (kIsWeb) {
+        // dart:io File não existe de verdade na web (image.path é uma blob
+        // URL, não um caminho de arquivo) — precisa subir os bytes direto.
+        await ref.putData(await image.readAsBytes());
+      } else {
+        await ref.putFile(File(image.path));
+      }
       final url = await ref.getDownloadURL();
       await FirebaseAuth.instance.currentUser!.updatePhotoURL(url);
       if (mounted) setState(() {});
@@ -79,7 +87,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   }
 
   Future<void> _signOut() async {
-    await FirebaseAuth.instance.signOut();
+    await NotificationsService.instance.signOut();
     // authStateChanges em CaffetoApp cuida da navegação
   }
 
@@ -130,6 +138,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
               region: 'southamerica-east1')
           .httpsCallable('excluirConta');
       await callable.call();
+      if (mounted) Navigator.pop(context); // fecha o loading
       await FirebaseAuth.instance.signOut();
       // authStateChanges em CaffetoApp cuida da navegação de volta ao login
     } catch (_) {

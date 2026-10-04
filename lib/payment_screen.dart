@@ -118,6 +118,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       final result = await callable.call({'pedidoId': widget.orderId});
       final data = result.data as Map;
+      if (!mounted) return;
 
       setState(() {
         _pixQrCodeBase64 = data['qrCodeBase64'] as String?;
@@ -125,11 +126,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
         _loadingPix = false;
       });
     } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
       setState(() {
         _loadingPix = false;
         _erro = e.message ?? 'Não foi possível gerar o Pix.';
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _loadingPix = false;
         _erro = 'Não foi possível gerar o Pix. Verifique sua conexão.';
@@ -153,17 +156,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       final result = await callable.call({'pedidoId': widget.orderId});
       final data = result.data as Map;
+      if (!mounted) return;
 
       setState(() {
         _cardCheckoutUrl = data['checkoutUrl'] as String?;
         _loadingCard = false;
       });
     } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
       setState(() {
         _loadingCard = false;
         _erroCard = e.message ?? 'Não foi possível gerar o pagamento.';
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _loadingCard = false;
         _erroCard =
@@ -252,7 +258,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
             style: TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
           ),
           Text(
-            'R\$ ${widget.total.toStringAsFixed(2).replaceAll('.', ',')}',
+            // O servidor recalcula o total a partir do cardápio ao gerar o
+            // pagamento (nunca confia no valor do cliente) — se o preço de
+            // algum item mudou entre o pedido e o pagamento, o total real já
+            // chegou pelo listener do Firestore e tem que prevalecer sobre o
+            // valor com que essa tela foi aberta.
+            'R\$ ${((_pedidoData['total'] as num?)?.toDouble() ?? widget.total).toStringAsFixed(2).replaceAll('.', ',')}',
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,

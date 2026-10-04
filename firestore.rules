@@ -99,6 +99,7 @@ service cloud.firestore {
       allow update: if isAdmin() || isMaster() ||
         (isCozinha() &&
          request.resource.data.userId == resource.data.userId &&
+         request.resource.data.itens == resource.data.itens &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
          request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
@@ -110,6 +111,7 @@ service cloud.firestore {
          transicaoValidaCozinha()) ||
         (isSignedIn() && resource.data.userId == request.auth.uid &&
          request.resource.data.status == resource.data.status &&
+         request.resource.data.itens == resource.data.itens &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
          request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&

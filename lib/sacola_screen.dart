@@ -52,7 +52,19 @@ class _SacolaScreenState extends State<SacolaScreen> {
   Future<void> _carregarHorarios() async {
     setState(() => _carregandoHorarios = true);
     try {
-      final cardapioSnap = await db.collection('cardapio').get();
+      final resultados = await Future.wait([
+        db.collection('cardapio').get(),
+        db.collection('categorias').get(),
+        db
+            .collection('horarios_retirada')
+            .where('ativo', isEqualTo: true)
+            .orderBy('hora')
+            .get(),
+      ]);
+      final cardapioSnap = resultados[0];
+      final categoriasSnap = resultados[1];
+      final horariosSnap = resultados[2];
+
       for (final doc in cardapioSnap.docs) {
         final data = doc.data();
         final nome = data['nome'] as String?;
@@ -62,17 +74,11 @@ class _SacolaScreenState extends State<SacolaScreen> {
         if (tempo != null) _tempoPorNome[nome] = tempo;
       }
 
-      final categoriasSnap = await db.collection('categorias').get();
       for (final doc in categoriasSnap.docs) {
         final tempo = doc.data()['tempoEstimadoMin'] as num?;
         if (tempo != null) _tempoPorCategoria[doc.id] = tempo;
       }
 
-      final horariosSnap = await db
-          .collection('horarios_retirada')
-          .where('ativo', isEqualTo: true)
-          .orderBy('hora')
-          .get();
       _todosHorarios =
           horariosSnap.docs.map((d) => d.data()['hora'] as String).toList();
 
@@ -458,7 +464,8 @@ class _SacolaScreenState extends State<SacolaScreen> {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final imageUrl = item['imageUrl'] as String?;
-                      final price = (item['price'] as double)
+                      final price = (item['price'] as num)
+                          .toDouble()
                           .toStringAsFixed(2)
                           .replaceAll('.', ',');
 

@@ -66,4 +66,24 @@ class NotificationsService {
       SetOptions(merge: true),
     );
   }
+
+  /// Sai da conta removendo antes o token FCM deste aparelho do perfil do
+  /// usuário atual. O token é do aparelho, não da conta — se não limpar,
+  /// a próxima pessoa que logar nesse mesmo aparelho (ex: família
+  /// compartilhando um tablet) continua recebendo push dos pedidos da
+  /// conta anterior também. Precisa rodar isso ANTES do signOut: depois
+  /// que a sessão cai, as regras do Firestore não deixam mais escrever
+  /// no perfil do usuário que acabou de sair.
+  Future<void> signOut() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && !kIsWeb) {
+      final token = await _messaging.getToken();
+      if (token != null) {
+        await db.collection('usuarios').doc(uid).update({
+          'fcmTokens': FieldValue.arrayRemove([token]),
+        });
+      }
+    }
+    await FirebaseAuth.instance.signOut();
+  }
 }

@@ -27,12 +27,24 @@ const MP_WEBHOOK_SECRET = defineSecret("MP_WEBHOOK_SECRET");
 const WEBHOOK_SECRET_PENDENTE = "PENDENTE_CONFIGURAR";
 
 const MP_API = "https://api.mercadopago.com";
-const WEBHOOK_URL =
-  "https://southamerica-east1-caffeto-a12fe.cloudfunctions.net/mercadopagoWebhook";
+// URL real do deploy (functions v2/Cloud Run têm uma URL própria, diferente
+// do padrão "<region>-<projeto>.cloudfunctions.net/<nome>" das v1).
+const WEBHOOK_URL = "https://mercadopagowebhook-ks2tqv474q-rj.a.run.app";
 
 // Pedido pode gerar um novo pagamento quando está aguardando ou quando a
 // tentativa anterior foi recusada/cancelada.
 const STATUS_PODE_PAGAR = ["Aguardando pagamento", "Pagamento recusado"];
+
+// Qualquer status a partir daqui significa que o pagamento já foi
+// confirmado e aplicado uma vez — usado pra reconhecer reentrega do
+// webhook (o Mercado Pago reenvia a mesma notificação às vezes) sem
+// regredir um pedido que a cozinha já avançou.
+const STATUS_PAGAMENTO_CONFIRMADO = [
+  "Aguardando preparo",
+  "Em preparo",
+  "Pronto",
+  "Entregue",
+];
 
 /**
  * Nunca confia no `total` gravado no pedido: recalcula a partir do preço
@@ -214,11 +226,16 @@ exports.criarPagamentoPix = onCall(
 
     const accessToken = MP_ACCESS_TOKEN.value();
 
-    // Troca de método (cartão -> pix): cancela/checa a tentativa anterior e
-    // abre uma nova "revisão" de pagamento, com uma idempotency key nova.
+    // Qualquer tentativa anterior (trocou de método, ou recusada e tentando
+    // de novo no mesmo Pix) precisa de uma "revisão" nova — senão a
+    // idempotency key fica igual à de antes e o Mercado Pago devolve o
+    // mesmo pagamento (já recusado/morto) de novo, em vez de criar um Pix
+    // novo e pagável.
     let revisao = pedido.pagamentoRevisao || 0;
-    if (pedido.metodoPagamento && pedido.metodoPagamento !== "PIX") {
-      await encerrarTentativaAnterior(pedido, accessToken);
+    if (pedido.metodoPagamento) {
+      if (pedido.metodoPagamento !== "PIX") {
+        await encerrarTentativaAnterior(pedido, accessToken);
+      }
       revisao += 1;
     }
 
@@ -519,8 +536,15 @@ exports.mercadopagoWebhook = onRequest(
       const pedidoAtual = pedidoSnap.data();
 
       if (payment.status === "approved") {
-        // Já processado antes (reentrega da mesma notificação) — no-op.
-        if (pedidoAtual.status === "Aguardando preparo") {
+        // Já processado antes (reentrega da mesma notificação pro mesmo
+        // pagamento) — no-op. Antes só reconhecia "Aguardando preparo", então
+        // uma reentrega depois da cozinha já ter avançado o pedido (ex:
+        // "Pronto") regredia o status de volta, fazendo o pedido reaparecer
+        // na fila da cozinha e reenviando a notificação de "pedido pronto".
+        if (
+          STATUS_PAGAMENTO_CONFIRMADO.includes(pedidoAtual.status) &&
+          String(pedidoAtual.mercadoPagoPaymentId) === String(payment.id)
+        ) {
           res.status(200).send("OK");
           return;
         }
