@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'main.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -28,7 +29,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _carregarEnderecos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance
+    final doc = await db
         .collection('usuarios')
         .doc(uid)
         .get();
@@ -47,7 +48,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _salvarEnderecos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await FirebaseFirestore.instance
+    await db
         .collection('usuarios')
         .doc(uid)
         .set({'enderecos': _enderecos}, SetOptions(merge: true));

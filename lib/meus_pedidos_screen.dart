@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'main.dart';
 import 'payment_screen.dart';
 
 Color _statusColor(String status) {
@@ -45,7 +46,7 @@ class MeusPedidosScreen extends StatelessWidget {
           : StreamBuilder<QuerySnapshot>(
               // Requer índice composto em (userId, criadoEm desc) — o
               // Firebase mostra um link pra criar automaticamente se faltar.
-              stream: FirebaseFirestore.instance
+              stream: db
                   .collection('pedidos')
                   .where('userId', isEqualTo: uid)
                   .orderBy('criadoEm', descending: true)

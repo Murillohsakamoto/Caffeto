@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'main.dart';
 
 enum _PaymentMethod { pix, card }
 
@@ -69,7 +70,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   /// confirma é o Mercado Pago, nunca o app. Continua escutando depois
   /// disso pra acompanhar o pedido até a cozinha marcar como pronto.
   void _escutarStatusDoPedido() {
-    _pedidoSub = FirebaseFirestore.instance
+    _pedidoSub = db
         .collection('pedidos')
         .doc(widget.orderId)
         .snapshots()
