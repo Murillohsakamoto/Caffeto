@@ -69,6 +69,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _signInWithApple() async {
+    setState(() => _loading = true);
+    try {
+      final provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      await FirebaseAuth.instance.signInWithProvider(provider);
+    } on FirebaseAuthException catch (e) {
+      // Usuário fechou a janela da Apple: não mostra erro.
+      if (e.code == 'canceled' || e.code == 'web-context-canceled') return;
+      if (mounted) _showError(_authError(e.code));
+    } catch (_) {
+      if (mounted) _showError('Erro ao entrar com Apple. Tente novamente.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Future<void> _forgotPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
@@ -236,6 +254,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               const SizedBox(height: 24),
+              // "Entrar com Apple" só aparece no iPhone/iPad (exigência da Apple
+              // para apps que oferecem login com Google).
+              if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _loading ? null : _signInWithApple,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      disabledBackgroundColor: Colors.black54,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.apple, size: 24, color: Colors.white),
+                    label: const Text(
+                      'Entrar com Apple',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               SizedBox(
                 width: double.infinity,
                 height: 52,
