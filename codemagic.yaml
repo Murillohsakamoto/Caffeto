@@ -1,0 +1,44 @@
+# Codemagic: monta o app iOS num Mac na nuvem e envia para o App Store Connect.
+# Pré-requisitos (feitos uma vez no site do Codemagic):
+#   1. Teams > Integrations > Developer Portal: conectar a chave de API da Apple
+#      com o nome exato "Caffeto ASC".
+#   2. Teams > Code signing identities > iOS certificates: gerar o certificado
+#      "Apple Distribution" (botão "Generate certificate").
+workflows:
+  ios-appstore:
+    name: iOS - App Store
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Caffeto ASC
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.caffeto.app
+      vars:
+        APP_STORE_APPLE_ID: 6819056494
+    triggering:
+      events: []   # roda só quando você clicar em "Start new build"
+    scripts:
+      - name: Baixar pacotes do Flutter
+        script: flutter pub get
+      - name: Aplicar perfis de assinatura no projeto Xcode
+        script: xcode-project use-profiles
+      - name: Gerar o app (.ipa)
+        script: |
+          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          LATEST_TF=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          [ "$LATEST_TF" -gt "$LATEST" ] 2>/dev/null && LATEST=$LATEST_TF
+          flutter build ipa --release \
+            --build-number=$((LATEST + 1)) \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false   # o envio para análise é feito manualmente, depois de revisar a ficha
