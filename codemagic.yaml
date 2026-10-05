@@ -32,8 +32,13 @@ workflows:
           LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
           LATEST_TF=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
           [ "$LATEST_TF" -gt "$LATEST" ] 2>/dev/null && LATEST=$LATEST_TF
+          LATEST=${LATEST//[^0-9]/}; LATEST=${LATEST:-0}
+          # Usa o contador do Codemagic; se a Apple já tiver um número maior, usa o da Apple + 1
+          NEXT=$BUILD_NUMBER
+          [ $((LATEST + 1)) -gt "$NEXT" ] 2>/dev/null && NEXT=$((LATEST + 1))
+          echo "Número do build: $NEXT"
           flutter build ipa --release \
-            --build-number=$((LATEST + 1)) \
+            --build-number=$NEXT \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
