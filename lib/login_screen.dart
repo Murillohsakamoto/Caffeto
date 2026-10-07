@@ -1,27 +1,10 @@
-import 'dart:convert';
 import 'dart:io' show Platform;
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'package:crypto/crypto.dart';
 import 'register_screen.dart';
-
-/// Gera uma string aleatória usada como nonce (proteção contra replay do
-/// token de identidade da Apple — recomendação oficial da própria Apple).
-String _generateNonce([int length = 32]) {
-  const charset =
-      '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
-  final random = Random.secure();
-  return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-      .join();
-}
-
-String _sha256ofString(String input) {
-  return sha256.convert(utf8.encode(input)).toString();
-}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -91,45 +74,35 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithApple() async {
     setState(() => _loading = true);
     try {
-      final rawNonce = _generateNonce();
-      final nonce = _sha256ofString(rawNonce);
-
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        nonce: nonce,
-      );
-
-      final oauthCredential = OAuthProvider('apple.com').credential(
-        idToken: appleCredential.identityToken,
-        rawNonce: rawNonce,
-      );
-
-      final userCred =
-          await FirebaseAuth.instance.signInWithCredential(oauthCredential);
-
-      // A Apple só manda nome/sobrenome na primeira vez que a pessoa loga.
-      final nome = [appleCredential.givenName, appleCredential.familyName]
-          .whereType<String>()
-          .join(' ')
-          .trim();
-      if (nome.isNotEmpty &&
-          (userCred.user?.displayName == null ||
-              userCred.user!.displayName!.isEmpty)) {
-        await userCred.user?.updateDisplayName(nome);
-      }
-    } on SignInWithAppleAuthorizationException catch (e) {
-      // Usuário cancelou o diálogo da Apple — não é erro, não mostra nada.
-      if (e.code == AuthorizationErrorCode.canceled) return;
-      if (mounted) _showError('Erro ao entrar com Apple. Tente novamente.');
+      // Fluxo nativo do Firebase para Apple no iPhone: ele mesmo abre a
+      // janela da Apple, gera o código de segurança (nonce) e valida o token.
+      final provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      await FirebaseAuth.instance.signInWithProvider(provider);
     } on FirebaseAuthException catch (e) {
-      if (mounted) _showError(_authError(e.code));
+      // Usuário fechou a janela da Apple: não é erro.
+      if (e.code == 'canceled' ||
+          e.code == 'web-context-canceled' ||
+          (e.message ?? '').contains('1001')) {
+        return;
+      }
+      if (mounted) _showError(_appleError(e.code));
     } catch (_) {
       if (mounted) _showError('Erro ao entrar com Apple. Tente novamente.');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _appleError(String code) {
+    switch (code) {
+      case 'account-exists-with-different-credential':
+        return 'Este e-mail já tem cadastro. Entre com e-mail e senha ou com Google.';
+      case 'user-disabled':
+        return 'Conta desativada. Entre em contato com o suporte.';
+      default:
+        return 'Erro ao entrar com Apple ($code). Tente novamente.';
     }
   }
 
