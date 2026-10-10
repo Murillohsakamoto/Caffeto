@@ -57,7 +57,9 @@ class CaffetoApp extends StatelessWidget {
             );
           }
           if (snapshot.hasData) return const _AuthGate();
-          return const LoginScreen();
+          // Visitante: pode ver o cardápio e montar a sacola sem conta
+          // (regra 5.1.1(v) da Apple). Login só para pedir e ver o perfil.
+          return const HomeScreen();
         },
       ),
     );
