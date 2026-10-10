@@ -34,6 +34,12 @@ void main() {
         reason: 'Defina TEST_EMAIL e TEST_PASSWORD no Codemagic.');
 
     app.main();
+    // O app abre no Início para visitantes; o login fica no Perfil.
+    await _esperarAparecer(tester, find.byIcon(Icons.home));
+    await _esperar(tester, 2);
+    await tester.tap(find.byIcon(Icons.person_outline));
+    await _esperar(tester, 2);
+    await tester.tap(find.text('Entrar ou criar conta'));
     await _esperarAparecer(tester, find.text('Bem-vindo de volta!'));
     await _esperar(tester, 2);
 
