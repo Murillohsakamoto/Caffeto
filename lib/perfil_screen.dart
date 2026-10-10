@@ -10,6 +10,7 @@ import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
 import 'main.dart' show db;
+import 'login_screen.dart' show abrirLogin;
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -146,9 +147,69 @@ class _PerfilScreenState extends State<PerfilScreen> {
     }
   }
 
+  Widget _buildVisitante(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text(
+          'Perfil',
+          style: TextStyle(
+            color: Color(0xFF1A1A1A),
+            fontWeight: FontWeight.w800,
+            fontSize: 20,
+          ),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.person_outline,
+                  size: 72, color: Color(0xFFC8A96E)),
+              const SizedBox(height: 16),
+              const Text(
+                'Entre para ver seu perfil, seus endereços e seus pedidos.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Color(0xFF555555)),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => abrirLogin(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFC8A96E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Entrar ou criar conta',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser!;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return _buildVisitante(context);
 
     return Scaffold(
       backgroundColor: Colors.white,

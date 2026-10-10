@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'cart_controller.dart';
 import 'payment_screen.dart';
 import 'main.dart';
+import 'login_screen.dart' show abrirLogin;
 
 class SacolaScreen extends StatefulWidget {
   const SacolaScreen({super.key});
@@ -331,6 +332,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final logado = FirebaseAuth.instance.currentUser != null;
     final items = CartController.instance.items;
     final total = CartController.instance.total;
 
@@ -525,8 +527,10 @@ class _SacolaScreenState extends State<SacolaScreen> {
                   ),
                   child: Column(
                     children: [
-                      _buildHorarioRetirada(),
-                      const SizedBox(height: 12),
+                      if (logado) ...[
+                        _buildHorarioRetirada(),
+                        const SizedBox(height: 12),
+                      ],
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -552,9 +556,11 @@ class _SacolaScreenState extends State<SacolaScreen> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: (_finalizando || _horarioEscolhido == null)
-                              ? null
-                              : _confirmarFinalizacao,
+                          onPressed: !logado
+                              ? () => abrirLogin(context)
+                              : (_finalizando || _horarioEscolhido == null)
+                                  ? null
+                                  : _confirmarFinalizacao,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFC8A96E),
                             disabledBackgroundColor: const Color(0xFFE0C99A),
@@ -572,8 +578,10 @@ class _SacolaScreenState extends State<SacolaScreen> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Text(
-                                  'Finalizar Pedido',
+                              : Text(
+                                  logado
+                                      ? 'Finalizar Pedido'
+                                      : 'Entrar para finalizar',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,

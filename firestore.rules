@@ -38,14 +38,16 @@ service cloud.firestore {
     }
 
     match /cardapio/{itemId} {
-      allow read: if isSignedIn();
+      // Vitrine pública: visitantes podem ver sem login (regra 5.1.1(v) da Apple)
+      allow read: if true;
       allow write: if isAdmin() || isMaster();
     }
 
     // Tempo estimado padrão por categoria (usado quando o prato não tem
     // um tempoEstimadoMin próprio). Doc id = nome da categoria.
     match /categorias/{categoriaId} {
-      allow read: if isSignedIn();
+      // Vitrine pública: visitantes podem ver sem login (regra 5.1.1(v) da Apple)
+      allow read: if true;
       allow write: if isAdmin() || isMaster();
     }
 
@@ -57,18 +59,27 @@ service cloud.firestore {
     }
 
     match /parceiros/{partnerId} {
-      allow read: if isSignedIn();
-      allow write: if isMaster();
+      // Vitrine pública: visitantes podem ver sem login (regra 5.1.1(v) da Apple)
+      allow read: if true;
+      allow write: if isAdmin() || isMaster();
+    }
+
+    // Retirada imediata: horarioRetirada vem null (sem hora marcada, segue o
+    // ciclo normal assim que ficar pronto). Retirada agendada: precisa ser um
+    // slot ativo da grade cadastrada pelo admin.
+    function horarioRetiradaValido() {
+      return request.resource.data.get('horarioRetirada', null) == null ||
+        (request.resource.data.horarioRetirada is string &&
+         request.resource.data.horarioRetirada.size() > 0 &&
+         get(/databases/$(database)/documents/horarios_retirada/$(request.resource.data.horarioRetirada))
+           .data.get('ativo', false) == true);
     }
 
     match /pedidos/{pedidoId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.status == 'Aguardando pagamento' &&
-        request.resource.data.horarioRetirada is string &&
-        request.resource.data.horarioRetirada.size() > 0 &&
-        get(/databases/$(database)/documents/horarios_retirada/$(request.resource.data.horarioRetirada))
-          .data.get('ativo', false) == true;
+        horarioRetiradaValido();
 
       allow read: if isSignedIn() &&
         (resource.data.userId == request.auth.uid || isAdmin() || isMaster() || isCozinha());
@@ -91,6 +102,7 @@ service cloud.firestore {
       allow update: if isAdmin() || isMaster() ||
         (isCozinha() &&
          request.resource.data.userId == resource.data.userId &&
+         request.resource.data.itens == resource.data.itens &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
          request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
@@ -102,6 +114,7 @@ service cloud.firestore {
          transicaoValidaCozinha()) ||
         (isSignedIn() && resource.data.userId == request.auth.uid &&
          request.resource.data.status == resource.data.status &&
+         request.resource.data.itens == resource.data.itens &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
          request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
