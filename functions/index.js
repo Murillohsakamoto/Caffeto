@@ -104,7 +104,7 @@ async function validarHorarioRetirada(horarioRetirada) {
  * Se a tentativa anterior já tiver sido aprovada, bloqueia a troca (o
  * pedido já foi pago).
  */
-async function encerrarTentativaAnterior(pedido, accessToken) {
+async function encerrarTentativaAnterior(pedido, accessToken, pedidoRef) {
   if (pedido.metodoPagamento !== "PIX" || !pedido.mercadoPagoPaymentId) {
     // Método anterior era cartão (uma preference, nunca virou pagamento) ou
     // não havia tentativa alguma — nada para checar/cancelar na API do MP.
@@ -122,6 +122,15 @@ async function encerrarTentativaAnterior(pedido, accessToken) {
   }
 
   if (resp.ok && ["pending", "in_process"].includes(pagamentoAnterior.status)) {
+    // Desvincula o Pix antigo do pedido ANTES de cancelar: o Mercado Pago
+    // avisa o cancelamento pelo webhook quase na hora, e se o pedido ainda
+    // apontasse para esse Pix o webhook marcaria "Pagamento recusado" no
+    // meio da troca para o cartão.
+    if (pedidoRef) {
+      await pedidoRef.update({
+        mercadoPagoPaymentId: admin.firestore.FieldValue.delete(),
+      });
+    }
     const cancelResp = await fetch(
       `${MP_API}/v1/payments/${pedido.mercadoPagoPaymentId}`,
       {
@@ -234,7 +243,7 @@ exports.criarPagamentoPix = onCall(
     let revisao = pedido.pagamentoRevisao || 0;
     if (pedido.metodoPagamento) {
       if (pedido.metodoPagamento !== "PIX") {
-        await encerrarTentativaAnterior(pedido, accessToken);
+        await encerrarTentativaAnterior(pedido, accessToken, pedidoRef);
       }
       revisao += 1;
     }
@@ -358,7 +367,7 @@ exports.criarPreferenciaCartao = onCall(
     // o checkout do cartão, senão os dois ficam pagáveis ao mesmo tempo.
     let revisao = pedido.pagamentoRevisao || 0;
     if (pedido.metodoPagamento && pedido.metodoPagamento !== "CARTAO") {
-      await encerrarTentativaAnterior(pedido, accessToken);
+      await encerrarTentativaAnterior(pedido, accessToken, pedidoRef);
       revisao += 1;
     }
 
@@ -577,6 +586,14 @@ exports.mercadopagoWebhook = onRequest(
         });
 
         logger.info(`Pedido ${pedidoId} confirmado e enviado à cozinha`);
+        res.status(200).send("OK");
+        return;
+      }
+
+      // Cancelamento feito pelo próprio Caffeto (troca de Pix para cartão)
+      // não é recusa do cliente: ignora.
+      if (payment.status === "cancelled" && payment.status_detail === "by_collector") {
+        logger.info(`Pagamento ${paymentId} cancelado pelo Caffeto (troca de método), ignorado`);
         res.status(200).send("OK");
         return;
       }
