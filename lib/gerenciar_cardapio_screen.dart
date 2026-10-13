@@ -100,12 +100,19 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
     );
     if (novo == null) return;
 
-    await db.collection('categorias').doc(categoria).set({
-      'nome': categoria,
-      'tempoEstimadoMin': novo,
-    });
-
-    if (mounted) setState(() => _tempoPorCategoria[categoria] = novo);
+    try {
+      await db.collection('categorias').doc(categoria).set({
+        'nome': categoria,
+        'tempoEstimadoMin': novo,
+      });
+      if (mounted) setState(() => _tempoPorCategoria[categoria] = novo);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _abrirFormularioItem({
@@ -203,16 +210,24 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                         novoData['tempoEstimadoMin'] = tempo;
                       }
 
-                      if (item == null) {
-                        await db.collection('cardapio').add(novoData);
-                      } else {
-                        if (tempo == null) {
-                          novoData['tempoEstimadoMin'] = FieldValue.delete();
+                      try {
+                        if (item == null) {
+                          await db.collection('cardapio').add(novoData);
+                        } else {
+                          if (tempo == null) {
+                            novoData['tempoEstimadoMin'] = FieldValue.delete();
+                          }
+                          await item.reference.update(novoData);
                         }
-                        await item.reference.update(novoData);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _carregar();
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text('Erro ao salvar: $e')),
+                          );
+                        }
                       }
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _carregar();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFC8A96E),
@@ -261,8 +276,16 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
       ),
     );
     if (confirmar == true) {
-      await item.reference.delete();
-      _carregar();
+      try {
+        await item.reference.delete();
+        _carregar();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao excluir: $e')),
+          );
+        }
+      }
     }
   }
 

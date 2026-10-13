@@ -23,21 +23,45 @@ class _HorariosRetiradaScreenState extends State<HorariosRetiradaScreen> {
     final horaStr =
         '${hora.hour.toString().padLeft(2, '0')}:${hora.minute.toString().padLeft(2, '0')}';
 
-    await db.collection('horarios_retirada').doc(horaStr).set({
-      'hora': horaStr,
-      'ativo': true,
-    });
+    try {
+      await db.collection('horarios_retirada').doc(horaStr).set({
+        'hora': horaStr,
+        'ativo': true,
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _alternarAtivo(String docId, bool ativo) async {
-    await db
-        .collection('horarios_retirada')
-        .doc(docId)
-        .update({'ativo': ativo});
+    try {
+      await db
+          .collection('horarios_retirada')
+          .doc(docId)
+          .update({'ativo': ativo});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _remover(String docId) async {
-    await db.collection('horarios_retirada').doc(docId).delete();
+    try {
+      await db.collection('horarios_retirada').doc(docId).delete();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao excluir: $e')),
+        );
+      }
+    }
   }
 
   @override
