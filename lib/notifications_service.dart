@@ -33,8 +33,14 @@ class NotificationsService {
 
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user == null) return;
-      final token = await _messaging.getToken();
-      if (token != null) await _salvarToken(user.uid, token);
+      try {
+        final token = await _messaging.getToken();
+        if (token != null) await _salvarToken(user.uid, token);
+      } catch (e) {
+        // iPhone sem push configurado (apns-token-not-set) ou sem internet:
+        // segue sem push, não pode quebrar o login.
+        debugPrint('Não foi possível registrar o token de push: $e');
+      }
     });
 
     _messaging.onTokenRefresh.listen((token) {
@@ -74,14 +80,24 @@ class NotificationsService {
   /// conta anterior também. Precisa rodar isso ANTES do signOut: depois
   /// que a sessão cai, as regras do Firestore não deixam mais escrever
   /// no perfil do usuário que acabou de sair.
+  ///
+  /// A limpeza do token é "melhor esforço": se falhar (ex: no iPhone sem
+  /// push configurado o getToken() lança apns-token-not-set, ou está sem
+  /// internet), a pessoa TEM que sair mesmo assim. Antes, qualquer erro
+  /// aqui interrompia a função e o botão "Sair" parecia não fazer nada.
   Future<void> signOut() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null && !kIsWeb) {
-      final token = await _messaging.getToken();
-      if (token != null) {
-        await db.collection('usuarios').doc(uid).update({
-          'fcmTokens': FieldValue.arrayRemove([token]),
-        });
+      try {
+        final token =
+            await _messaging.getToken().timeout(const Duration(seconds: 5));
+        if (token != null) {
+          await db.collection('usuarios').doc(uid).update({
+            'fcmTokens': FieldValue.arrayRemove([token]),
+          }).timeout(const Duration(seconds: 5));
+        }
+      } catch (e) {
+        debugPrint('Não foi possível limpar o token de push no logout: $e');
       }
     }
     await FirebaseAuth.instance.signOut();
