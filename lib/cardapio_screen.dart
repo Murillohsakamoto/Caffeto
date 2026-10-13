@@ -90,6 +90,7 @@ class _CardapioScreenState extends State<CardapioScreen> {
       'name': item['nome'] as String,
       'price': (item['preco'] as num).toDouble(),
       'imageUrl': item['imagem_url'] as String?,
+      if (item['combo'] == true) 'itensCombo': item['itensCombo'],
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -294,6 +295,11 @@ class _CardapioScreenState extends State<CardapioScreen> {
         final categoria = item['categoria'] as String? ?? '';
         final imagemUrl = item['imagem_url'] as String?;
         final qty = CartController.instance.qtyOf(nome);
+        final itensCombo = item['combo'] == true
+            ? (item['itensCombo'] as List<dynamic>? ?? [])
+                .map((i) => '${i['qty']}x ${i['nome']}')
+                .join(', ')
+            : null;
 
         return Container(
           padding: const EdgeInsets.all(12),
@@ -348,7 +354,11 @@ class _CardapioScreenState extends State<CardapioScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      categoria,
+                      itensCombo != null && itensCombo.isNotEmpty
+                          ? 'Inclui: $itensCombo'
+                          : categoria,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF9E9E9E),

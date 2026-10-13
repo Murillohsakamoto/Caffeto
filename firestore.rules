@@ -24,16 +24,24 @@ service cloud.firestore {
         get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('cozinha', false) == true;
     }
 
+    // Papel restrito de entregador: só enxerga e marca como entregue os
+    // pedidos do tipo "entrega" — não mexe na fila de preparo da cozinha.
+    function isEntregador() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('entregador', false) == true;
+    }
+
     match /usuarios/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin() || isMaster());
       allow create: if isSignedIn() && request.auth.uid == userId &&
         !('admin' in request.resource.data) && !('master' in request.resource.data) &&
-        !('cozinha' in request.resource.data);
+        !('cozinha' in request.resource.data) && !('entregador' in request.resource.data);
       allow update: if isMaster() ||
         (isSignedIn() && request.auth.uid == userId &&
          request.resource.data.get('admin', false) == resource.data.get('admin', false) &&
          request.resource.data.get('master', false) == resource.data.get('master', false) &&
-         request.resource.data.get('cozinha', false) == resource.data.get('cozinha', false));
+         request.resource.data.get('cozinha', false) == resource.data.get('cozinha', false) &&
+         request.resource.data.get('entregador', false) == resource.data.get('entregador', false));
       allow delete: if isMaster();
     }
 
@@ -75,22 +83,43 @@ service cloud.firestore {
            .data.get('ativo', false) == true);
     }
 
+    // Entrega: precisa do prédio, andar e sala preenchidos. Retirada (ou
+    // ausência do campo, pedido antigo) não exige nada aqui.
+    function enderecoEntregaValido() {
+      return request.resource.data.get('tipoEntrega', 'retirada') != 'entrega' ||
+        (request.resource.data.get('enderecoEntrega', null) != null &&
+         request.resource.data.enderecoEntrega.get('predio', '').size() > 0 &&
+         request.resource.data.enderecoEntrega.get('andar', '').size() > 0 &&
+         request.resource.data.enderecoEntrega.get('sala', '').size() > 0);
+    }
+
     match /pedidos/{pedidoId} {
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.status == 'Aguardando pagamento' &&
-        horarioRetiradaValido();
+        horarioRetiradaValido() &&
+        enderecoEntregaValido();
 
       allow read: if isSignedIn() &&
-        (resource.data.userId == request.auth.uid || isAdmin() || isMaster() || isCozinha());
+        (resource.data.userId == request.auth.uid || isAdmin() || isMaster() ||
+         isCozinha() || isEntregador());
 
       // Só essas transições de status são válidas da cozinha pra frente —
-      // não dá pra pular etapa nem voltar o pedido pra trás.
+      // não dá pra pular etapa nem voltar o pedido pra trás. Pedido de
+      // entrega não pode ser marcado como "Entregue" pela cozinha — isso é
+      // exclusivo de quem está com a tela de entregas (isEntregador).
       function transicaoValidaCozinha() {
         return
           (resource.data.status == 'Aguardando preparo' && request.resource.data.status == 'Em preparo') ||
           (resource.data.status == 'Em preparo' && request.resource.data.status == 'Pronto') ||
-          (resource.data.status == 'Pronto' && request.resource.data.status == 'Entregue');
+          (resource.data.status == 'Pronto' && request.resource.data.status == 'Entregue' &&
+           resource.data.get('tipoEntrega', 'retirada') != 'entrega');
+      }
+
+      // Entregador só avança pedidos de entrega de "Pronto" pra "Entregue".
+      function transicaoValidaEntregador() {
+        return resource.data.get('tipoEntrega', 'retirada') == 'entrega' &&
+          resource.data.status == 'Pronto' && request.resource.data.status == 'Entregue';
       }
 
       // O dono do pedido só pode alterar campos que não afetam o status, o
@@ -105,6 +134,8 @@ service cloud.firestore {
          request.resource.data.itens == resource.data.itens &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
+         request.resource.data.get('tipoEntrega', 'retirada') == resource.data.get('tipoEntrega', 'retirada') &&
+         request.resource.data.get('enderecoEntrega', null) == resource.data.get('enderecoEntrega', null) &&
          request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
          request.resource.data.get('pagamentoRevisao', null) == resource.data.get('pagamentoRevisao', null) &&
          request.resource.data.get('mercadoPagoPaymentId', null) ==
@@ -112,11 +143,27 @@ service cloud.firestore {
          request.resource.data.get('mercadoPagoPreferenceId', null) ==
            resource.data.get('mercadoPagoPreferenceId', null) &&
          transicaoValidaCozinha()) ||
+        (isEntregador() &&
+         request.resource.data.userId == resource.data.userId &&
+         request.resource.data.itens == resource.data.itens &&
+         request.resource.data.total == resource.data.total &&
+         request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
+         request.resource.data.get('tipoEntrega', 'retirada') == resource.data.get('tipoEntrega', 'retirada') &&
+         request.resource.data.get('enderecoEntrega', null) == resource.data.get('enderecoEntrega', null) &&
+         request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
+         request.resource.data.get('pagamentoRevisao', null) == resource.data.get('pagamentoRevisao', null) &&
+         request.resource.data.get('mercadoPagoPaymentId', null) ==
+           resource.data.get('mercadoPagoPaymentId', null) &&
+         request.resource.data.get('mercadoPagoPreferenceId', null) ==
+           resource.data.get('mercadoPagoPreferenceId', null) &&
+         transicaoValidaEntregador()) ||
         (isSignedIn() && resource.data.userId == request.auth.uid &&
          request.resource.data.status == resource.data.status &&
          request.resource.data.itens == resource.data.itens &&
          request.resource.data.total == resource.data.total &&
          request.resource.data.horarioRetirada == resource.data.horarioRetirada &&
+         request.resource.data.get('tipoEntrega', 'retirada') == resource.data.get('tipoEntrega', 'retirada') &&
+         request.resource.data.get('enderecoEntrega', null) == resource.data.get('enderecoEntrega', null) &&
          request.resource.data.get('metodoPagamento', null) == resource.data.get('metodoPagamento', null) &&
          request.resource.data.get('pagamentoRevisao', null) == resource.data.get('pagamentoRevisao', null) &&
          request.resource.data.get('mercadoPagoPaymentId', null) ==
@@ -128,4 +175,3 @@ service cloud.firestore {
     }
   }
 }
-

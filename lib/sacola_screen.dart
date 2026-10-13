@@ -7,6 +7,9 @@ import 'payment_screen.dart';
 import 'main.dart';
 import 'login_screen.dart' show abrirLogin;
 
+const double kTaxaEntrega = 1.50;
+const double kPedidoMinimoEntrega = 10.0;
+
 class SacolaScreen extends StatefulWidget {
   const SacolaScreen({super.key});
 
@@ -21,6 +24,15 @@ class _SacolaScreenState extends State<SacolaScreen> {
   List<String> _horariosDisponiveis = [];
   String? _horarioEscolhido;
   int _tempoEstimadoMin = 15;
+  // true = retirar assim que o pedido ficar pronto (sem hora marcada);
+  // false = cliente escolheu um horário específico da grade.
+  bool _retiradaImediata = true;
+
+  // true = entrega no prédio/andar/sala; false = retirar no balcão.
+  bool _entrega = false;
+  final _predioController = TextEditingController();
+  final _andarController = TextEditingController();
+  final _salaController = TextEditingController();
 
   @override
   void initState() {
@@ -37,6 +49,9 @@ class _SacolaScreenState extends State<SacolaScreen> {
   @override
   void dispose() {
     CartController.instance.removeListener(_onCartChanged);
+    _predioController.dispose();
+    _andarController.dispose();
+    _salaController.dispose();
     super.dispose();
   }
 
@@ -50,7 +65,19 @@ class _SacolaScreenState extends State<SacolaScreen> {
   Future<void> _carregarHorarios() async {
     setState(() => _carregandoHorarios = true);
     try {
-      final cardapioSnap = await db.collection('cardapio').get();
+      final resultados = await Future.wait([
+        db.collection('cardapio').get(),
+        db.collection('categorias').get(),
+        db
+            .collection('horarios_retirada')
+            .where('ativo', isEqualTo: true)
+            .orderBy('hora')
+            .get(),
+      ]);
+      final cardapioSnap = resultados[0];
+      final categoriasSnap = resultados[1];
+      final horariosSnap = resultados[2];
+
       for (final doc in cardapioSnap.docs) {
         final data = doc.data();
         final nome = data['nome'] as String?;
@@ -60,17 +87,11 @@ class _SacolaScreenState extends State<SacolaScreen> {
         if (tempo != null) _tempoPorNome[nome] = tempo;
       }
 
-      final categoriasSnap = await db.collection('categorias').get();
       for (final doc in categoriasSnap.docs) {
         final tempo = doc.data()['tempoEstimadoMin'] as num?;
         if (tempo != null) _tempoPorCategoria[doc.id] = tempo;
       }
 
-      final horariosSnap = await db
-          .collection('horarios_retirada')
-          .where('ativo', isEqualTo: true)
-          .orderBy('hora')
-          .get();
       _todosHorarios =
           horariosSnap.docs.map((d) => d.data()['hora'] as String).toList();
 
@@ -135,15 +156,27 @@ class _SacolaScreenState extends State<SacolaScreen> {
   // primeira chamada deu certo. `set` com o mesmo id é seguro de repetir.
   DocumentReference<Map<String, dynamic>>? _pedidoEmCriacao;
 
+  bool get _enderecoValido =>
+      _predioController.text.trim().isNotEmpty &&
+      _andarController.text.trim().isNotEmpty &&
+      _salaController.text.trim().isNotEmpty;
+
+  double get _totalComTaxa =>
+      CartController.instance.total + (_entrega ? kTaxaEntrega : 0);
+
+  bool get _atingePedidoMinimo =>
+      !_entrega || CartController.instance.total >= kPedidoMinimoEntrega;
+
   Future<void> _criarPedidoEPagar() async {
     if (_finalizando) return; // trava contra duplo toque antes do rebuild
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final horario = _horarioEscolhido;
-    if (horario == null) return;
+    final horario = (_entrega || _retiradaImediata) ? null : _horarioEscolhido;
+    if (!_entrega && !_retiradaImediata && horario == null) return;
+    if (_entrega && (!_enderecoValido || !_atingePedidoMinimo)) return;
 
     final cart = CartController.instance;
-    final total = cart.total;
+    final total = _totalComTaxa;
 
     setState(() => _finalizando = true);
     try {
@@ -158,12 +191,24 @@ class _SacolaScreenState extends State<SacolaScreen> {
                 'preco': i['price'],
                 'qty': i['qty'],
                 'imageUrl': i['imageUrl'],
+                // Combo: guarda o que tinha dentro no momento da compra, pra
+                // cozinha saber o que montar sem depender da definição atual
+                // do combo (que pode mudar depois).
+                if (i['itensCombo'] != null) 'itensCombo': i['itensCombo'],
               },
             )
             .toList(),
         'total': total,
         'status': 'Aguardando pagamento',
         'horarioRetirada': horario,
+        'tipoEntrega': _entrega ? 'entrega' : 'retirada',
+        if (_entrega) 'taxaEntrega': kTaxaEntrega,
+        if (_entrega)
+          'enderecoEntrega': {
+            'predio': _predioController.text.trim(),
+            'andar': _andarController.text.trim(),
+            'sala': _salaController.text.trim(),
+          },
         'criadoEm': FieldValue.serverTimestamp(),
       });
 
@@ -206,8 +251,8 @@ class _SacolaScreenState extends State<SacolaScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         content: Text(
-          'Total: R\$ ${CartController.instance.total.toStringAsFixed(2).replaceAll('.', ',')}\n'
-          'Retirada às $_horarioEscolhido\n\n'
+          'Total: R\$ ${_totalComTaxa.toStringAsFixed(2).replaceAll('.', ',')}\n'
+          '${_entrega ? 'Entrega no prédio ${_predioController.text.trim()}, ${_andarController.text.trim()}º andar, ${_salaController.text.trim()}' : _retiradaImediata ? 'Retirada imediata (~${_tempoEstimadoMin}min)' : 'Retirada às $_horarioEscolhido'}\n\n'
           'Continuar para o pagamento?',
           style: const TextStyle(fontSize: 14, color: Color(0xFF9E9E9E)),
         ),
@@ -244,6 +289,142 @@ class _SacolaScreenState extends State<SacolaScreen> {
     );
   }
 
+  Widget _buildEntregaToggle() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildModoRetiradaChip(
+              label: 'Retirar no balcão',
+              selected: !_entrega,
+              onTap: () => setState(() => _entrega = false),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildModoRetiradaChip(
+              label: 'Entrega',
+              selected: _entrega,
+              onTap: () => setState(() => _entrega = true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnderecoEntrega() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _predioController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Prédio',
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _andarController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Andar',
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _salaController,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              labelText: 'Sala / local de trabalho',
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Taxa de entrega: R\$ ${kTaxaEntrega.toStringAsFixed(2).replaceAll('.', ',')}'
+            ' · Pedido mínimo: R\$ ${kPedidoMinimoEntrega.toStringAsFixed(2).replaceAll('.', ',')}',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+          ),
+          if (!_atingePedidoMinimo)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Adicione mais R\$ ${(kPedidoMinimoEntrega - CartController.instance.total).toStringAsFixed(2).replaceAll('.', ',')} para liberar a entrega.',
+                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModoRetiradaToggle() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildModoRetiradaChip(
+              label: 'Retirada imediata',
+              selected: _retiradaImediata,
+              onTap: () => setState(() => _retiradaImediata = true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildModoRetiradaChip(
+              label: 'Escolher horário',
+              selected: !_retiradaImediata,
+              onTap: () => setState(() => _retiradaImediata = false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModoRetiradaChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFC8A96E) : const Color(0xFFF5F0E8),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : const Color(0xFF1A1A1A),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHorarioRetirada() {
     if (_carregandoHorarios) {
       return const Padding(
@@ -255,6 +436,16 @@ class _SacolaScreenState extends State<SacolaScreen> {
             child: CircularProgressIndicator(
                 strokeWidth: 2, color: Color(0xFFC8A96E)),
           ),
+        ),
+      );
+    }
+
+    if (_retiradaImediata) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          'Retirada assim que o pedido ficar pronto (tempo estimado: ${_tempoEstimadoMin}min).',
+          style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
         ),
       );
     }
@@ -334,7 +525,6 @@ class _SacolaScreenState extends State<SacolaScreen> {
   Widget build(BuildContext context) {
     final logado = FirebaseAuth.instance.currentUser != null;
     final items = CartController.instance.items;
-    final total = CartController.instance.total;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -396,7 +586,8 @@ class _SacolaScreenState extends State<SacolaScreen> {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final imageUrl = item['imageUrl'] as String?;
-                      final price = (item['price'] as double)
+                      final price = (item['price'] as num)
+                          .toDouble()
                           .toStringAsFixed(2)
                           .replaceAll('.', ',');
 
@@ -528,7 +719,13 @@ class _SacolaScreenState extends State<SacolaScreen> {
                   child: Column(
                     children: [
                       if (logado) ...[
-                        _buildHorarioRetirada(),
+                        _buildEntregaToggle(),
+                        if (_entrega)
+                          _buildEnderecoEntrega()
+                        else ...[
+                          _buildModoRetiradaToggle(),
+                          _buildHorarioRetirada(),
+                        ],
                         const SizedBox(height: 12),
                       ],
                       Row(
@@ -542,7 +739,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
                             ),
                           ),
                           Text(
-                            'R\$ ${total.toStringAsFixed(2).replaceAll('.', ',')}',
+                            'R\$ ${_totalComTaxa.toStringAsFixed(2).replaceAll('.', ',')}',
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -558,7 +755,13 @@ class _SacolaScreenState extends State<SacolaScreen> {
                         child: ElevatedButton(
                           onPressed: !logado
                               ? () => abrirLogin(context)
-                              : (_finalizando || _horarioEscolhido == null)
+                              : (_finalizando ||
+                                      (!_entrega &&
+                                          !_retiradaImediata &&
+                                          _horarioEscolhido == null) ||
+                                      (_entrega &&
+                                          (!_enderecoValido ||
+                                              !_atingePedidoMinimo)))
                                   ? null
                                   : _confirmarFinalizacao,
                           style: ElevatedButton.styleFrom(

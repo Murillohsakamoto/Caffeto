@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onRequest } = require("firebase-functions/v2/https");
+const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
@@ -26,12 +27,27 @@ const MP_WEBHOOK_SECRET = defineSecret("MP_WEBHOOK_SECRET");
 const WEBHOOK_SECRET_PENDENTE = "PENDENTE_CONFIGURAR";
 
 const MP_API = "https://api.mercadopago.com";
-const WEBHOOK_URL =
-  "https://southamerica-east1-caffeto-a12fe.cloudfunctions.net/mercadopagoWebhook";
+// URL real do deploy (functions v2/Cloud Run têm uma URL própria, diferente
+// do padrão "<region>-<projeto>.cloudfunctions.net/<nome>" das v1).
+const WEBHOOK_URL = "https://mercadopagowebhook-ks2tqv474q-rj.a.run.app";
 
 // Pedido pode gerar um novo pagamento quando está aguardando ou quando a
 // tentativa anterior foi recusada/cancelada.
 const STATUS_PODE_PAGAR = ["Aguardando pagamento", "Pagamento recusado"];
+
+const TAXA_ENTREGA = 1.5;
+const PEDIDO_MINIMO_ENTREGA = 10;
+
+// Qualquer status a partir daqui significa que o pagamento já foi
+// confirmado e aplicado uma vez — usado pra reconhecer reentrega do
+// webhook (o Mercado Pago reenvia a mesma notificação às vezes) sem
+// regredir um pedido que a cozinha já avançou.
+const STATUS_PAGAMENTO_CONFIRMADO = [
+  "Aguardando preparo",
+  "Em preparo",
+  "Pronto",
+  "Entregue",
+];
 
 /**
  * Nunca confia no `total` gravado no pedido: recalcula a partir do preço
@@ -69,16 +85,44 @@ async function calcularTotalReal(itens) {
 }
 
 /**
- * Confere que o horário de retirada escolhido realmente existe na grade
- * cadastrada pelo admin e está ativo.
+ * Recalcula o total de verdade (itens + taxa de entrega) e garante o
+ * pedido mínimo pra quem escolheu entrega — tudo com base no pedido real
+ * no banco, nunca no que o cliente mandou.
  */
-async function validarHorarioRetirada(horarioRetirada) {
-  if (!horarioRetirada) {
+async function calcularTotalComEntrega(pedido) {
+  const subtotal = await calcularTotalReal(pedido.itens);
+  if (pedido.tipoEntrega !== "entrega") return subtotal;
+
+  if (subtotal < PEDIDO_MINIMO_ENTREGA) {
     throw new HttpsError(
       "failed-precondition",
-      "Pedido sem horário de retirada."
+      `Pedido mínimo para entrega é R$ ${PEDIDO_MINIMO_ENTREGA.toFixed(2)}.`
     );
   }
+
+  const endereco = pedido.enderecoEntrega;
+  if (
+    !endereco ||
+    !String(endereco.predio || "").trim() ||
+    !String(endereco.andar || "").trim() ||
+    !String(endereco.sala || "").trim()
+  ) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Endereço de entrega incompleto."
+    );
+  }
+
+  return subtotal + TAXA_ENTREGA;
+}
+
+/**
+ * Confere que o horário de retirada escolhido realmente existe na grade
+ * cadastrada pelo admin e está ativo. Pedido de retirada imediata não tem
+ * horarioRetirada (null) — nada pra validar nesse caso.
+ */
+async function validarHorarioRetirada(horarioRetirada) {
+  if (!horarioRetirada) return;
   const doc = await db.collection("horarios_retirada").doc(horarioRetirada).get();
   if (!doc.exists || doc.data().ativo !== true) {
     throw new HttpsError(
@@ -95,7 +139,7 @@ async function validarHorarioRetirada(horarioRetirada) {
  * Se a tentativa anterior já tiver sido aprovada, bloqueia a troca (o
  * pedido já foi pago).
  */
-async function encerrarTentativaAnterior(pedido, accessToken) {
+async function encerrarTentativaAnterior(pedido, accessToken, pedidoRef) {
   if (pedido.metodoPagamento !== "PIX" || !pedido.mercadoPagoPaymentId) {
     // Método anterior era cartão (uma preference, nunca virou pagamento) ou
     // não havia tentativa alguma — nada para checar/cancelar na API do MP.
@@ -113,6 +157,15 @@ async function encerrarTentativaAnterior(pedido, accessToken) {
   }
 
   if (resp.ok && ["pending", "in_process"].includes(pagamentoAnterior.status)) {
+    // Desvincula o Pix antigo do pedido ANTES de cancelar: o Mercado Pago
+    // avisa o cancelamento pelo webhook quase na hora, e se o pedido ainda
+    // apontasse para esse Pix o webhook marcaria "Pagamento recusado" no
+    // meio da troca para o cartão.
+    if (pedidoRef) {
+      await pedidoRef.update({
+        mercadoPagoPaymentId: admin.firestore.FieldValue.delete(),
+      });
+    }
     const cancelResp = await fetch(
       `${MP_API}/v1/payments/${pedido.mercadoPagoPaymentId}`,
       {
@@ -217,18 +270,23 @@ exports.criarPagamentoPix = onCall(
 
     const accessToken = MP_ACCESS_TOKEN.value();
 
-    // Troca de método (cartão -> pix): cancela/checa a tentativa anterior e
-    // abre uma nova "revisão" de pagamento, com uma idempotency key nova.
+    // Qualquer tentativa anterior (trocou de método, ou recusada e tentando
+    // de novo no mesmo Pix) precisa de uma "revisão" nova — senão a
+    // idempotency key fica igual à de antes e o Mercado Pago devolve o
+    // mesmo pagamento (já recusado/morto) de novo, em vez de criar um Pix
+    // novo e pagável.
     let revisao = pedido.pagamentoRevisao || 0;
-    if (pedido.metodoPagamento && pedido.metodoPagamento !== "PIX") {
-      await encerrarTentativaAnterior(pedido, accessToken);
+    if (pedido.metodoPagamento) {
+      if (pedido.metodoPagamento !== "PIX") {
+        await encerrarTentativaAnterior(pedido, accessToken, pedidoRef);
+      }
       revisao += 1;
     }
 
     const userRecord = await admin.auth().getUser(uid);
     const payerEmail = userRecord.email || "cliente@caffeto.app";
 
-    const total = await calcularTotalReal(pedido.itens);
+    const total = await calcularTotalComEntrega(pedido);
     if (Math.abs(total - Number(pedido.total)) > 0.01) {
       logger.warn(
         `Total divergente no pedido ${pedidoId}: recebido ${pedido.total}, real ${total}. Usando o valor real.`
@@ -344,14 +402,14 @@ exports.criarPreferenciaCartao = onCall(
     // o checkout do cartão, senão os dois ficam pagáveis ao mesmo tempo.
     let revisao = pedido.pagamentoRevisao || 0;
     if (pedido.metodoPagamento && pedido.metodoPagamento !== "CARTAO") {
-      await encerrarTentativaAnterior(pedido, accessToken);
+      await encerrarTentativaAnterior(pedido, accessToken, pedidoRef);
       revisao += 1;
     }
 
     const userRecord = await admin.auth().getUser(uid);
     const payerEmail = userRecord.email || "cliente@caffeto.app";
 
-    const total = await calcularTotalReal(pedido.itens);
+    const total = await calcularTotalComEntrega(pedido);
     if (Math.abs(total - Number(pedido.total)) > 0.01) {
       logger.warn(
         `Total divergente no pedido ${pedidoId}: recebido ${pedido.total}, real ${total}. Usando o valor real.`
@@ -522,8 +580,15 @@ exports.mercadopagoWebhook = onRequest(
       const pedidoAtual = pedidoSnap.data();
 
       if (payment.status === "approved") {
-        // Já processado antes (reentrega da mesma notificação) — no-op.
-        if (pedidoAtual.status === "Aguardando preparo") {
+        // Já processado antes (reentrega da mesma notificação pro mesmo
+        // pagamento) — no-op. Antes só reconhecia "Aguardando preparo", então
+        // uma reentrega depois da cozinha já ter avançado o pedido (ex:
+        // "Pronto") regredia o status de volta, fazendo o pedido reaparecer
+        // na fila da cozinha e reenviando a notificação de "pedido pronto".
+        if (
+          STATUS_PAGAMENTO_CONFIRMADO.includes(pedidoAtual.status) &&
+          String(pedidoAtual.mercadoPagoPaymentId) === String(payment.id)
+        ) {
           res.status(200).send("OK");
           return;
         }
@@ -560,6 +625,14 @@ exports.mercadopagoWebhook = onRequest(
         return;
       }
 
+      // Cancelamento feito pelo próprio Caffeto (troca de Pix para cartão)
+      // não é recusa do cliente: ignora.
+      if (payment.status === "cancelled" && payment.status_detail === "by_collector") {
+        logger.info(`Pagamento ${paymentId} cancelado pelo Caffeto (troca de método), ignorado`);
+        res.status(200).send("OK");
+        return;
+      }
+
       if (["rejected", "cancelled"].includes(payment.status)) {
         // Só marca como recusado se for a tentativa que o pedido está
         // esperando agora — assim o cancelamento de uma tentativa antiga
@@ -585,6 +658,46 @@ exports.mercadopagoWebhook = onRequest(
       // 5xx faz o Mercado Pago reenviar a notificação mais tarde, em vez de
       // considerar entregue e desistir.
       res.status(500).send("Erro interno");
+    }
+  }
+);
+
+/**
+ * FUNÇÃO 5 — Notificar cliente quando o pedido fica pronto
+ * Dispara quando a cozinha muda o status do pedido para "Pronto" (só nessa
+ * transição — outras mudanças de status ou edições não geram push). Manda
+ * a notificação pra todos os tokens FCM salvos em usuarios/{userId},
+ * cadastrados pelo app (NotificationsService) a cada login/refresh de
+ * token.
+ */
+exports.notificarPedidoPronto = onDocumentUpdated(
+  { document: "pedidos/{pedidoId}", database: "caffeto", region: "southamerica-east1" },
+  async (event) => {
+    const antes = event.data.before.data();
+    const depois = event.data.after.data();
+    if (antes.status === "Pronto" || depois.status !== "Pronto") return;
+
+    const usuarioSnap = await db.collection("usuarios").doc(depois.userId).get();
+    const tokens = usuarioSnap.data()?.fcmTokens;
+    if (!Array.isArray(tokens) || tokens.length === 0) return;
+
+    const resposta = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: "Pedido pronto! ☕",
+        body: "Pode retirar no balcão da Caffeto.",
+      },
+    });
+
+    // Token inválido/expirado (app desinstalado, etc.) — remove pra não
+    // acumular lixo e não tentar de novo nas próximas notificações.
+    const tokensInvalidos = resposta.responses
+      .map((r, i) => (r.success ? null : tokens[i]))
+      .filter(Boolean);
+    if (tokensInvalidos.length > 0) {
+      await usuarioSnap.ref.update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensInvalidos),
+      });
     }
   }
 );

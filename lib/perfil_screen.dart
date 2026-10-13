@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,10 +7,12 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'main.dart';
+import 'notifications_service.dart';
 import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
-import 'main.dart' show db;
 import 'login_screen.dart' show abrirLogin;
 
 class PerfilScreen extends StatefulWidget {
@@ -74,7 +77,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final ref = FirebaseStorage.instance.ref('avatars/$uid.jpg');
-      await ref.putFile(File(image.path));
+      if (kIsWeb) {
+        // dart:io File não existe de verdade na web (image.path é uma blob
+        // URL, não um caminho de arquivo) — precisa subir os bytes direto.
+        await ref.putData(await image.readAsBytes());
+      } else {
+        await ref.putFile(File(image.path));
+      }
       final url = await ref.getDownloadURL();
       await FirebaseAuth.instance.currentUser!.updatePhotoURL(url);
       if (mounted) setState(() {});
@@ -86,7 +95,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   }
 
   Future<void> _signOut() async {
-    await FirebaseAuth.instance.signOut();
+    await NotificationsService.instance.signOut();
     // authStateChanges em CaffetoApp cuida da navegação
   }
 
@@ -137,6 +146,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
               region: 'southamerica-east1')
           .httpsCallable('excluirConta');
       await callable.call();
+      if (mounted) Navigator.pop(context); // fecha o loading
       await FirebaseAuth.instance.signOut();
       // authStateChanges em CaffetoApp cuida da navegação de volta ao login
     } catch (_) {
@@ -301,21 +311,26 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 onTap: _editarDados),
             _buildOption(Icons.lock_outline, 'Alterar Senha',
                 onTap: _alterarSenha),
-            _buildOption(Icons.receipt_long_outlined, 'Meus Pedidos',
-                onTap: _verPedidos),
             _buildOption(Icons.location_on_outlined, 'Meus Endereços',
                 onTap: _gerenciarEnderecos),
             _buildOption(Icons.notifications_outlined, 'Notificações',
                 onTap: () {}),
             _buildOption(Icons.help_outline, 'Ajuda', onTap: () {}),
+            _buildOption(
+              Icons.privacy_tip_outlined,
+              'Política de Privacidade',
+              onTap: () => launchUrl(
+                Uri.parse('https://caffeto-a12fe.web.app/privacidade'),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
             if (_isAdmin || _isCozinha)
               _buildOption(
                 Icons.soup_kitchen_outlined,
                 'Modo Cozinha',
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const CozinhaScreen()),
+                  MaterialPageRoute(builder: (_) => const CozinhaScreen()),
                 ),
                 highlight: true,
               ),
@@ -341,7 +356,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 highlight: true,
               ),
             ],
-
             const SizedBox(height: 16),
             const Divider(color: Color(0xFFEEEEEE)),
             const SizedBox(height: 16),
@@ -634,186 +648,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
         ),
       ),
     );
-  }
-
-  // ── PEDIDOS ───────────────────────────────────────────────────────────
-  void _verPedidos() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        builder: (_, scrollController) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const Text('Meus Pedidos',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 16),
-              Expanded(
-                child: FutureBuilder<QuerySnapshot>(
-                  // Requer índice composto em (userId, criadoEm desc)
-                  // O Firebase mostrará um link para criar automaticamente
-                  future: db
-                      .collection('pedidos')
-                      .where('userId', isEqualTo: uid)
-                      .orderBy('criadoEm', descending: true)
-                      .limit(20)
-                      .get(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return const Center(
-                        child: CircularProgressIndicator(
-                            color: Color(0xFFC8A96E)),
-                      );
-                    }
-                    if (snapshot.hasError ||
-                        !snapshot.hasData ||
-                        snapshot.data!.docs.isEmpty) {
-                      return const Center(
-                        child: Text(
-                          'Nenhum pedido encontrado',
-                          style: TextStyle(
-                              color: Color(0xFF9E9E9E), fontSize: 14),
-                        ),
-                      );
-                    }
-
-                    final pedidos = snapshot.data!.docs;
-                    return ListView.separated(
-                      controller: scrollController,
-                      itemCount: pedidos.length,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: 12),
-                      itemBuilder: (_, index) {
-                        final data = pedidos[index].data()
-                            as Map<String, dynamic>;
-                        final itens =
-                            (data['itens'] as List<dynamic>? ?? [])
-                                .map((i) =>
-                                    '${i['nome']} x${i['qty']}')
-                                .join(', ');
-                        final total =
-                            (data['total'] as num? ?? 0).toDouble();
-                        final status =
-                            data['status'] as String? ?? 'Em preparo';
-                        final horarioRetirada =
-                            data['horarioRetirada'] as String?;
-                        final ts = data['criadoEm'] as Timestamp?;
-                        final date = ts != null
-                            ? '${ts.toDate().day.toString().padLeft(2, '0')}/${ts.toDate().month.toString().padLeft(2, '0')}/${ts.toDate().year}'
-                            : '--';
-                        return Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF5F0E8),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    '#${pedidos[index].id.substring(0, 6).toUpperCase()}',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF1A1A1A),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: _statusColor(status)
-                                          .withValues(alpha: 0.15),
-                                      borderRadius:
-                                          BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      status,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: _statusColor(status),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                itens,
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Color(0xFF9E9E9E)),
-                              ),
-                              if (horarioRetirada != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Retirada às $horarioRetirada',
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF9E9E9E)),
-                                ),
-                              ],
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(date,
-                                      style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF9E9E9E))),
-                                  Text(
-                                    'R\$ ${total.toStringAsFixed(2).replaceAll('.', ',')}',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFFC8A96E),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'Entregue':
-        return const Color(0xFF4CAF50);
-      case 'Cancelado':
-        return const Color(0xFFE53935);
-      case 'Pronto':
-        return const Color(0xFF2196F3);
-      default:
-        return const Color(0xFFF59300);
-    }
   }
 
   // ── ENDEREÇOS ─────────────────────────────────────────────────────────

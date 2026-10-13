@@ -6,12 +6,15 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'firebase_options.dart';
-import 'login_screen.dart';
 import 'cardapio_screen.dart';
 import 'sacola_screen.dart';
 import 'perfil_screen.dart';
 import 'cart_controller.dart';
 import 'cozinha_screen.dart';
+import 'admin_dashboard_screen.dart';
+import 'entrega_screen.dart';
+import 'meus_pedidos_screen.dart';
+import 'notifications_service.dart';
 
 late final FirebaseFirestore db;
 
@@ -33,14 +36,28 @@ void main() async {
   runApp(const CaffetoApp());
 }
 
-class CaffetoApp extends StatelessWidget {
+final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+class CaffetoApp extends StatefulWidget {
   const CaffetoApp({super.key});
+
+  @override
+  State<CaffetoApp> createState() => _CaffetoAppState();
+}
+
+class _CaffetoAppState extends State<CaffetoApp> {
+  @override
+  void initState() {
+    super.initState();
+    NotificationsService.instance.inicializar(scaffoldMessengerKey);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Caffeto',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFC8A96E)),
         useMaterial3: true,
@@ -86,9 +103,10 @@ class _AuthGate extends StatelessWidget {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final isAdmin = data?['admin'] == true;
         final isCozinha = data?['cozinha'] == true;
-        if (isAdmin || isCozinha) {
-          return CozinhaScreen(isRoot: true, isAdmin: isAdmin);
-        }
+        final isEntregador = data?['entregador'] == true;
+        if (isAdmin) return const AdminDashboardScreen();
+        if (isCozinha) return const CozinhaScreen(isRoot: true);
+        if (isEntregador) return const EntregaScreen();
         return const HomeScreen();
       },
     );
@@ -113,6 +131,11 @@ class _HomeScreenState extends State<HomeScreen> {
       label: 'Cardápio',
     ),
     (
+      icon: Icons.receipt_long_outlined,
+      activeIcon: Icons.receipt_long,
+      label: 'Pedidos',
+    ),
+    (
       icon: Icons.shopping_bag_outlined,
       activeIcon: Icons.shopping_bag,
       label: 'Sacola',
@@ -128,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: const [
           _HomePage(),
           CardapioScreen(),
+          MeusPedidosScreen(),
           SacolaScreen(),
           PerfilScreen(),
         ],
@@ -151,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(_navItems.length, (index) {
           final isActive = index == _selectedIndex;
-          final isSacola = index == 2;
+          final isSacola = index == 3;
           final item = _navItems[index];
           return GestureDetector(
             onTap: () => setState(() => _selectedIndex = index),
@@ -315,6 +339,7 @@ class _HomePageState extends State<_HomePage> {
       'name': product['nome'] as String,
       'price': (product['preco'] as num).toDouble(),
       'imageUrl': product['imagem_url'] as String?,
+      if (product['combo'] == true) 'itensCombo': product['itensCombo'],
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

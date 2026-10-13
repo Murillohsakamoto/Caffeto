@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
 import 'gerenciar_cardapio_screen.dart';
 import 'horarios_retirada_screen.dart';
+import 'notifications_service.dart';
 
 const _prazoRetirada = Duration(minutes: 20);
 
@@ -44,7 +44,7 @@ class CozinhaScreen extends StatelessWidget {
       ),
     );
     if (confirmar == true) {
-      await FirebaseAuth.instance.signOut();
+      await NotificationsService.instance.signOut();
       // authStateChanges em CaffetoApp cuida da navegação de volta ao login
     }
   }
@@ -332,6 +332,7 @@ class _OrderCardState extends State<_OrderCard> {
   @override
   Widget build(BuildContext context) {
     final status = widget.data['status'] as String? ?? '';
+    final tipoEntrega = widget.data['tipoEntrega'] as String? ?? 'retirada';
     final itens = (widget.data['itens'] as List<dynamic>?) ?? [];
     final total = (widget.data['total'] as num?)?.toDouble() ?? 0.0;
     final metodo = widget.data['metodoPagamento'] as String? ?? '';
@@ -434,9 +435,11 @@ class _OrderCardState extends State<_OrderCard> {
               children: [
                 ...itens.map((item) {
                   final i = item as Map<String, dynamic>;
+                  final itensCombo = i['itensCombo'] as List<dynamic>?;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
                           width: 28,
@@ -458,13 +461,31 @@ class _OrderCardState extends State<_OrderCard> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            i['nome'] as String? ?? '',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                i['nome'] as String? ?? '',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                              if (itensCombo != null && itensCombo.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    itensCombo
+                                        .map((c) => '${c['qty']}x ${c['nome']}')
+                                        .join(', '),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF9E9E9E),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ],
@@ -492,7 +513,7 @@ class _OrderCardState extends State<_OrderCard> {
                 const SizedBox(height: 8),
                 _buildRetiradaInfo(status),
                 const SizedBox(height: 12),
-                _buildActionButton(status),
+                _buildActionButton(status, tipoEntrega),
               ],
             ),
           ),
@@ -504,6 +525,8 @@ class _OrderCardState extends State<_OrderCard> {
   Widget _buildRetiradaInfo(String status) {
     final horario = widget.data['horarioRetirada'] as String?;
     final prontoEm = widget.data['prontoEm'] as Timestamp?;
+    final tipoEntrega = widget.data['tipoEntrega'] as String? ?? 'retirada';
+    final endereco = widget.data['enderecoEntrega'] as Map<String, dynamic>?;
 
     String? countdownText;
     Color countdownColor = const Color(0xFF9E9E9E);
@@ -519,8 +542,14 @@ class _OrderCardState extends State<_OrderCard> {
       }
     }
 
-    if (horario == null && countdownText == null) {
-      return const SizedBox.shrink();
+    final String label;
+    if (tipoEntrega == 'entrega' && endereco != null) {
+      label =
+          'Entrega: Prédio ${endereco['predio']}, ${endereco['andar']}º andar, ${endereco['sala']}';
+    } else if (horario != null) {
+      label = 'Retirada às $horario';
+    } else {
+      label = 'Retirada imediata';
     }
 
     return Padding(
@@ -528,17 +557,16 @@ class _OrderCardState extends State<_OrderCard> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          if (horario != null)
-            Text(
-              'Retirada às $horario',
+          Expanded(
+            child: Text(
+              label,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF9E9E9E),
               ),
-            )
-          else
-            const SizedBox.shrink(),
+            ),
+          ),
           if (countdownText != null)
             Container(
               padding:
@@ -561,7 +589,7 @@ class _OrderCardState extends State<_OrderCard> {
     );
   }
 
-  Widget _buildActionButton(String status) {
+  Widget _buildActionButton(String status, String tipoEntrega) {
     if (_updating) {
       return const Center(
         child: SizedBox(
@@ -608,6 +636,27 @@ class _OrderCardState extends State<_OrderCard> {
             ),
             elevation: 0,
             padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
+    if (status == 'Pronto' && tipoEntrega == 'entrega') {
+      // Pedido de entrega: a partir daqui é com quem está na tela de
+      // entregas, a cozinha não marca mais nada nesse pedido.
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F0E8),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          'Aguardando retirada pelo entregador',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF9E9E9E),
           ),
         ),
       );
