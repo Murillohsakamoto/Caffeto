@@ -128,6 +128,59 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
     final tempoController = TextEditingController(
         text: (data?['tempoEstimadoMin'] as num?)?.toInt().toString() ?? '');
     var disponivel = data?['disponivel'] as bool? ?? true;
+    var destaque = data?['destaque'] as bool? ?? false;
+    var isCombo = data?['combo'] as bool? ?? false;
+    final itensCombo = ((data?['itensCombo'] as List<dynamic>?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    // Lista plana de produtos existentes pra montar o combo (exclui outros
+    // combos e, ao editar, o próprio item — não faz sentido um combo se
+    // conter ou conter outro combo).
+    final produtosDisponiveis = _porCategoria.values
+        .expand((lista) => lista)
+        .where((d) => d.id != item?.id && (d.data() as Map)['combo'] != true)
+        .toList();
+
+    Future<void> adicionarItemAoCombo(StateSetter setSheetState) async {
+      final escolhido = await showDialog<QueryDocumentSnapshot>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Adicionar item', style: TextStyle(fontWeight: FontWeight.w800)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: produtosDisponiveis.length,
+              itemBuilder: (_, i) {
+                final p = produtosDisponiveis[i].data() as Map<String, dynamic>;
+                return ListTile(
+                  title: Text(p['nome'] as String? ?? ''),
+                  onTap: () => Navigator.pop(ctx, produtosDisponiveis[i]),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar', style: TextStyle(color: Color(0xFF9E9E9E))),
+            ),
+          ],
+        ),
+      );
+      if (escolhido == null) return;
+      final nomeEscolhido = (escolhido.data() as Map)['nome'] as String;
+      setSheetState(() {
+        final existente = itensCombo.indexWhere((e) => e['nome'] == nomeEscolhido);
+        if (existente >= 0) {
+          itensCombo[existente]['qty'] = (itensCombo[existente]['qty'] as num) + 1;
+        } else {
+          itensCombo.add({'nome': nomeEscolhido, 'qty': 1});
+        }
+      });
+    }
 
     await showModalBottomSheet(
       context: context,
@@ -186,6 +239,46 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                   activeThumbColor: const Color(0xFFC8A96E),
                   onChanged: (v) => setSheetState(() => disponivel = v),
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Em destaque na home'),
+                  subtitle: const Text('Aparece na seção "Em destaque" da tela inicial'),
+                  value: destaque,
+                  activeThumbColor: const Color(0xFFC8A96E),
+                  onChanged: (v) => setSheetState(() => destaque = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('É um combo'),
+                  subtitle: const Text('Reúne outros produtos já cadastrados por um preço fixo'),
+                  value: isCombo,
+                  activeThumbColor: const Color(0xFFC8A96E),
+                  onChanged: (v) => setSheetState(() => isCombo = v),
+                ),
+                if (isCombo) ...[
+                  const SizedBox(height: 8),
+                  ...itensCombo.map((e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text('${e['qty']}x ${e['nome']}')),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18, color: Color(0xFFE53935)),
+                              onPressed: () =>
+                                  setSheetState(() => itensCombo.remove(e)),
+                            ),
+                          ],
+                        ),
+                      )),
+                  TextButton.icon(
+                    onPressed: produtosDisponiveis.isEmpty
+                        ? null
+                        : () => adicionarItemAoCombo(setSheetState),
+                    icon: const Icon(Icons.add, size: 18, color: Color(0xFFC8A96E)),
+                    label: const Text('Adicionar item ao combo',
+                        style: TextStyle(color: Color(0xFFC8A96E), fontWeight: FontWeight.w600)),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -197,6 +290,12 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                           precoController.text.trim().replaceAll(',', '.'));
                       final categoria = categoriaController.text.trim();
                       if (nome.isEmpty || preco == null || categoria.isEmpty) return;
+                      if (isCombo && itensCombo.isEmpty) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('Adicione ao menos um item ao combo.')),
+                        );
+                        return;
+                      }
 
                       final tempo = int.tryParse(tempoController.text.trim());
 
@@ -205,9 +304,14 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                         'preco': preco,
                         'categoria': categoria,
                         'disponivel': disponivel,
+                        'destaque': destaque,
+                        'combo': isCombo,
                       };
                       if (tempo != null) {
                         novoData['tempoEstimadoMin'] = tempo;
+                      }
+                      if (isCombo) {
+                        novoData['itensCombo'] = itensCombo;
                       }
 
                       try {
@@ -216,6 +320,9 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                         } else {
                           if (tempo == null) {
                             novoData['tempoEstimadoMin'] = FieldValue.delete();
+                          }
+                          if (!isCombo) {
+                            novoData['itensCombo'] = FieldValue.delete();
                           }
                           await item.reference.update(novoData);
                         }
@@ -375,18 +482,37 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                                   final nome = data['nome'] as String? ?? '';
                                   final preco = (data['preco'] as num?)?.toDouble() ?? 0;
                                   final disponivel = data['disponivel'] as bool? ?? true;
+                                  final destaque = data['destaque'] as bool? ?? false;
+                                  final combo = data['combo'] as bool? ?? false;
                                   final override = data['tempoEstimadoMin'] as num?;
                                   return ListTile(
-                                    title: Text(nome,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: disponivel
-                                              ? const Color(0xFF1A1A1A)
-                                              : const Color(0xFFBBBBBB),
-                                          decoration: disponivel
-                                              ? null
-                                              : TextDecoration.lineThrough,
-                                        )),
+                                    title: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Flexible(
+                                          child: Text(nome,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: disponivel
+                                                    ? const Color(0xFF1A1A1A)
+                                                    : const Color(0xFFBBBBBB),
+                                                decoration: disponivel
+                                                    ? null
+                                                    : TextDecoration.lineThrough,
+                                              )),
+                                        ),
+                                        if (destaque) ...[
+                                          const SizedBox(width: 6),
+                                          const Icon(Icons.star,
+                                              size: 14, color: Color(0xFFC8A96E)),
+                                        ],
+                                        if (combo) ...[
+                                          const SizedBox(width: 6),
+                                          const Icon(Icons.inventory_2_outlined,
+                                              size: 14, color: Color(0xFFC8A96E)),
+                                        ],
+                                      ],
+                                    ),
                                     subtitle: Text(
                                       'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')} · ${override != null ? '${override.toInt()}min próprio' : 'tempo padrão'}${disponivel ? '' : ' · indisponível'}',
                                       style: const TextStyle(

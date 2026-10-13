@@ -335,6 +335,7 @@ class _HomePageState extends State<_HomePage> {
       'name': product['nome'] as String,
       'price': (product['preco'] as num).toDouble(),
       'imageUrl': product['imagem_url'] as String?,
+      if (product['combo'] == true) 'itensCombo': product['itensCombo'],
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

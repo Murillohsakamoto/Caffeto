@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
 import 'cozinha_screen.dart';
 import 'gerenciar_cardapio_screen.dart';
+import 'gerenciar_categorias_screen.dart';
 import 'horarios_retirada_screen.dart';
 import 'parceiros_screen.dart';
 import 'notifications_service.dart';
@@ -200,6 +201,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   subtitle: 'Cadastrar, editar e excluir produtos',
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const GerenciarCardapioScreen())),
+                ),
+                _menuTile(
+                  icon: Icons.category_outlined,
+                  title: 'Categorias',
+                  subtitle: 'Criar, renomear e excluir categorias',
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const GerenciarCategoriasScreen())),
                 ),
                 _menuTile(
                   icon: Icons.schedule_outlined,

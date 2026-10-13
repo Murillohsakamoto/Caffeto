@@ -434,9 +434,11 @@ class _OrderCardState extends State<_OrderCard> {
               children: [
                 ...itens.map((item) {
                   final i = item as Map<String, dynamic>;
+                  final itensCombo = i['itensCombo'] as List<dynamic>?;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
                           width: 28,
@@ -458,13 +460,31 @@ class _OrderCardState extends State<_OrderCard> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            i['nome'] as String? ?? '',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                i['nome'] as String? ?? '',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                              if (itensCombo != null && itensCombo.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    itensCombo
+                                        .map((c) => '${c['qty']}x ${c['nome']}')
+                                        .join(', '),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF9E9E9E),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ],

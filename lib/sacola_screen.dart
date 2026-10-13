@@ -166,6 +166,10 @@ class _SacolaScreenState extends State<SacolaScreen> {
                 'preco': i['price'],
                 'qty': i['qty'],
                 'imageUrl': i['imageUrl'],
+                // Combo: guarda o que tinha dentro no momento da compra, pra
+                // cozinha saber o que montar sem depender da definição atual
+                // do combo (que pode mudar depois).
+                if (i['itensCombo'] != null) 'itensCombo': i['itensCombo'],
               },
             )
             .toList(),
