@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'cart_controller.dart';
 import 'payment_screen.dart';
 import 'main.dart';
+import 'login_screen.dart' show abrirLogin;
 
 const double kTaxaEntrega = 1.50;
 const double kPedidoMinimoEntrega = 10.0;
@@ -522,6 +523,7 @@ class _SacolaScreenState extends State<SacolaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final logado = FirebaseAuth.instance.currentUser != null;
     final items = CartController.instance.items;
 
     return Scaffold(
@@ -716,14 +718,16 @@ class _SacolaScreenState extends State<SacolaScreen> {
                   ),
                   child: Column(
                     children: [
-                      _buildEntregaToggle(),
-                      if (_entrega)
-                        _buildEnderecoEntrega()
-                      else ...[
-                        _buildModoRetiradaToggle(),
-                        _buildHorarioRetirada(),
+                      if (logado) ...[
+                        _buildEntregaToggle(),
+                        if (_entrega)
+                          _buildEnderecoEntrega()
+                        else ...[
+                          _buildModoRetiradaToggle(),
+                          _buildHorarioRetirada(),
+                        ],
+                        const SizedBox(height: 12),
                       ],
-                      const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -749,14 +753,17 @@ class _SacolaScreenState extends State<SacolaScreen> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: (_finalizando ||
-                                  (!_entrega &&
-                                      !_retiradaImediata &&
-                                      _horarioEscolhido == null) ||
-                                  (_entrega &&
-                                      (!_enderecoValido || !_atingePedidoMinimo)))
-                              ? null
-                              : _confirmarFinalizacao,
+                          onPressed: !logado
+                              ? () => abrirLogin(context)
+                              : (_finalizando ||
+                                      (!_entrega &&
+                                          !_retiradaImediata &&
+                                          _horarioEscolhido == null) ||
+                                      (_entrega &&
+                                          (!_enderecoValido ||
+                                              !_atingePedidoMinimo)))
+                                  ? null
+                                  : _confirmarFinalizacao,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFC8A96E),
                             disabledBackgroundColor: const Color(0xFFE0C99A),
@@ -774,8 +781,10 @@ class _SacolaScreenState extends State<SacolaScreen> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Text(
-                                  'Finalizar Pedido',
+                              : Text(
+                                  logado
+                                      ? 'Finalizar Pedido'
+                                      : 'Entrar para finalizar',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,

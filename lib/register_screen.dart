@@ -55,8 +55,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'nome': nome,
         'enderecos': [],
       });
+      // A conta já está criada e logada: fecha o cadastro e volta para a
+      // tela principal (senão o usuário fica aqui e, ao tentar de novo,
+      // recebe "e-mail já cadastrado").
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
       if (mounted) _showError(_authError(e.code));
+    } catch (_) {
+      // Conta criada, mas o perfil não salvou: segue logado mesmo assim.
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

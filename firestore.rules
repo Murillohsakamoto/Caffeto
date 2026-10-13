@@ -46,14 +46,16 @@ service cloud.firestore {
     }
 
     match /cardapio/{itemId} {
-      allow read: if isSignedIn();
+      // Vitrine pública: visitantes podem ver sem login (regra 5.1.1(v) da Apple)
+      allow read: if true;
       allow write: if isAdmin() || isMaster();
     }
 
     // Tempo estimado padrão por categoria (usado quando o prato não tem
     // um tempoEstimadoMin próprio). Doc id = nome da categoria.
     match /categorias/{categoriaId} {
-      allow read: if isSignedIn();
+      // Vitrine pública: visitantes podem ver sem login (regra 5.1.1(v) da Apple)
+      allow read: if true;
       allow write: if isAdmin() || isMaster();
     }
 
@@ -65,7 +67,8 @@ service cloud.firestore {
     }
 
     match /parceiros/{partnerId} {
-      allow read: if isSignedIn();
+      // Vitrine pública: visitantes podem ver sem login (regra 5.1.1(v) da Apple)
+      allow read: if true;
       allow write: if isAdmin() || isMaster();
     }
 
@@ -172,4 +175,3 @@ service cloud.firestore {
     }
   }
 }
-

@@ -13,6 +13,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>792481109924-biqdis4tm6krg6i8q9nh2k6nuvpakcgs.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Precisamos acessar sua galeria para atualizar sua foto de perfil.</string>
 	<key>NSCameraUsageDescription</key>

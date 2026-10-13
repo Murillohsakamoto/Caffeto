@@ -1,0 +1,91 @@
+# Codemagic: monta o app iOS num Mac na nuvem e envia para o App Store Connect.
+# Pré-requisitos (feitos uma vez no site do Codemagic):
+#   1. Teams > Integrations > Developer Portal: conectar a chave de API da Apple
+#      com o nome exato "Codemagic".
+#   2. Teams > Code signing identities > iOS certificates: gerar o certificado
+#      "Apple Distribution" (botão "Generate certificate").
+workflows:
+  ios-appstore:
+    name: iOS - App Store
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Codemagic
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.caffeto.app
+      vars:
+        APP_STORE_APPLE_ID: 6819056494
+    triggering:
+      events: []   # roda só quando você clicar em "Start new build"
+    scripts:
+      - name: Baixar pacotes do Flutter
+        script: flutter pub get
+      - name: Aplicar perfis de assinatura no projeto Xcode
+        script: xcode-project use-profiles
+      - name: Gerar o app (.ipa)
+        script: |
+          LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          LATEST_TF=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          [ "$LATEST_TF" -gt "$LATEST" ] 2>/dev/null && LATEST=$LATEST_TF
+          LATEST=${LATEST//[^0-9]/}; LATEST=${LATEST:-0}
+          # Usa o contador do Codemagic; se a Apple já tiver um número maior, usa o da Apple + 1
+          NEXT=$BUILD_NUMBER
+          [ $((LATEST + 1)) -gt "$NEXT" ] 2>/dev/null && NEXT=$((LATEST + 1))
+          echo "Número do build: $NEXT"
+          flutter build ipa --release \
+            --build-number=$NEXT \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false   # o envio para análise é feito manualmente, depois de revisar a ficha
+
+  # Tira os prints da App Store num iPhone virtual de 6,9" (1320x2868).
+  # Pré-requisito: no app do Codemagic, aba "Environment variables", grupo
+  # "conta_teste" com TEST_EMAIL e TEST_PASSWORD (marcados como Secret).
+  ios-prints:
+    name: iOS - Prints da loja
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - conta_teste
+    triggering:
+      events: []
+    scripts:
+      - name: Baixar pacotes do Flutter
+        script: flutter pub get
+      - name: Ligar iPhone Pro Max virtual
+        script: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devs = [d for rt, ds in json.load(sys.stdin)['devices'].items() if 'iOS' in rt for d in ds if d['name'].endswith('Pro Max')]
+          print(devs[-1]['udid'])")
+          echo "Simulador: $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
+          echo "SIM_UDID=$UDID" >> $CM_ENV
+      - name: Tirar os prints
+        script: |
+          mkdir -p screenshots
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/prints_loja_test.dart \
+            -d "$SIM_UDID" \
+            --dart-define=TEST_EMAIL="$TEST_EMAIL" \
+            --dart-define=TEST_PASSWORD="$TEST_PASSWORD"
+          ls -la screenshots
+    artifacts:
+      - screenshots/*.png

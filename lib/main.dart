@@ -6,7 +6,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'firebase_options.dart';
-import 'login_screen.dart';
 import 'cardapio_screen.dart';
 import 'sacola_screen.dart';
 import 'perfil_screen.dart';
@@ -75,7 +74,9 @@ class _CaffetoAppState extends State<CaffetoApp> {
             );
           }
           if (snapshot.hasData) return const _AuthGate();
-          return const LoginScreen();
+          // Visitante: pode ver o cardápio e montar a sacola sem conta
+          // (regra 5.1.1(v) da Apple). Login só para pedir e ver o perfil.
+          return const HomeScreen();
         },
       ),
     );
