@@ -13,6 +13,7 @@ import 'perfil_screen.dart';
 import 'cart_controller.dart';
 import 'cozinha_screen.dart';
 import 'admin_dashboard_screen.dart';
+import 'entrega_screen.dart';
 import 'meus_pedidos_screen.dart';
 import 'notifications_service.dart';
 
@@ -101,8 +102,10 @@ class _AuthGate extends StatelessWidget {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final isAdmin = data?['admin'] == true;
         final isCozinha = data?['cozinha'] == true;
+        final isEntregador = data?['entregador'] == true;
         if (isAdmin) return const AdminDashboardScreen();
         if (isCozinha) return const CozinhaScreen(isRoot: true);
+        if (isEntregador) return const EntregaScreen();
         return const HomeScreen();
       },
     );

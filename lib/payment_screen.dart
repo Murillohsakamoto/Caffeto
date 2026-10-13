@@ -675,11 +675,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
           subtitulo: 'A cozinha já começou. Avisamos quando estiver pronto.',
         );
       case 'Pronto':
-        return (
-          icon: Icons.shopping_bag_outlined,
-          titulo: 'Pedido pronto!',
-          subtitulo: 'Pode retirar no balcão.',
-        );
+        return _pedidoData['tipoEntrega'] == 'entrega'
+            ? (
+                icon: Icons.delivery_dining_outlined,
+                titulo: 'Pedido pronto!',
+                subtitulo: 'Aguarde a entrega no seu endereço.',
+              )
+            : (
+                icon: Icons.shopping_bag_outlined,
+                titulo: 'Pedido pronto!',
+                subtitulo: 'Pode retirar no balcão.',
+              );
       case 'Entregue':
         return (
           icon: Icons.done_all,
@@ -697,6 +703,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Widget? _buildContadorRetirada(String status) {
+    if (_pedidoData['tipoEntrega'] == 'entrega') return null;
     final horario = _pedidoData['horarioRetirada'] as String?;
     final prontoEm = _pedidoData['prontoEm'] as Timestamp?;
     if (status != 'Pronto' || prontoEm == null) {

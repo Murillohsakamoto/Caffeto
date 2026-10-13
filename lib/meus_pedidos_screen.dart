@@ -84,6 +84,8 @@ class MeusPedidosScreen extends StatelessWidget {
                     final total = (data['total'] as num? ?? 0).toDouble();
                     final status = data['status'] as String? ?? 'Aguardando pagamento';
                     final horarioRetirada = data['horarioRetirada'] as String?;
+                    final tipoEntrega = data['tipoEntrega'] as String? ?? 'retirada';
+                    final enderecoEntrega = data['enderecoEntrega'] as Map<String, dynamic>?;
                     final ts = data['criadoEm'] as Timestamp?;
                     final date = ts != null
                         ? '${ts.toDate().day.toString().padLeft(2, '0')}/${ts.toDate().month.toString().padLeft(2, '0')}/${ts.toDate().year}'
@@ -144,9 +146,13 @@ class MeusPedidosScreen extends StatelessWidget {
                                     const TextStyle(fontSize: 13, color: Color(0xFF9E9E9E))),
                             const SizedBox(height: 4),
                             Text(
-                              horarioRetirada != null
-                                  ? 'Retirada às $horarioRetirada'
-                                  : 'Retirada imediata',
+                              tipoEntrega == 'entrega'
+                                  ? (enderecoEntrega != null
+                                      ? 'Entrega: Prédio ${enderecoEntrega['predio']}, ${enderecoEntrega['andar']}º andar, ${enderecoEntrega['sala']}'
+                                      : 'Entrega')
+                                  : (horarioRetirada != null
+                                      ? 'Retirada às $horarioRetirada'
+                                      : 'Retirada imediata'),
                               style:
                                   const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
                             ),

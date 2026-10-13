@@ -35,6 +35,9 @@ const WEBHOOK_URL = "https://mercadopagowebhook-ks2tqv474q-rj.a.run.app";
 // tentativa anterior foi recusada/cancelada.
 const STATUS_PODE_PAGAR = ["Aguardando pagamento", "Pagamento recusado"];
 
+const TAXA_ENTREGA = 1.5;
+const PEDIDO_MINIMO_ENTREGA = 10;
+
 // Qualquer status a partir daqui significa que o pagamento já foi
 // confirmado e aplicado uma vez — usado pra reconhecer reentrega do
 // webhook (o Mercado Pago reenvia a mesma notificação às vezes) sem
@@ -79,6 +82,38 @@ async function calcularTotalReal(itens) {
     (soma, item) => soma + precoPorNome[item.nome] * Number(item.qty),
     0
   );
+}
+
+/**
+ * Recalcula o total de verdade (itens + taxa de entrega) e garante o
+ * pedido mínimo pra quem escolheu entrega — tudo com base no pedido real
+ * no banco, nunca no que o cliente mandou.
+ */
+async function calcularTotalComEntrega(pedido) {
+  const subtotal = await calcularTotalReal(pedido.itens);
+  if (pedido.tipoEntrega !== "entrega") return subtotal;
+
+  if (subtotal < PEDIDO_MINIMO_ENTREGA) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Pedido mínimo para entrega é R$ ${PEDIDO_MINIMO_ENTREGA.toFixed(2)}.`
+    );
+  }
+
+  const endereco = pedido.enderecoEntrega;
+  if (
+    !endereco ||
+    !String(endereco.predio || "").trim() ||
+    !String(endereco.andar || "").trim() ||
+    !String(endereco.sala || "").trim()
+  ) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Endereço de entrega incompleto."
+    );
+  }
+
+  return subtotal + TAXA_ENTREGA;
 }
 
 /**
@@ -251,7 +286,7 @@ exports.criarPagamentoPix = onCall(
     const userRecord = await admin.auth().getUser(uid);
     const payerEmail = userRecord.email || "cliente@caffeto.app";
 
-    const total = await calcularTotalReal(pedido.itens);
+    const total = await calcularTotalComEntrega(pedido);
     if (Math.abs(total - Number(pedido.total)) > 0.01) {
       logger.warn(
         `Total divergente no pedido ${pedidoId}: recebido ${pedido.total}, real ${total}. Usando o valor real.`
@@ -374,7 +409,7 @@ exports.criarPreferenciaCartao = onCall(
     const userRecord = await admin.auth().getUser(uid);
     const payerEmail = userRecord.email || "cliente@caffeto.app";
 
-    const total = await calcularTotalReal(pedido.itens);
+    const total = await calcularTotalComEntrega(pedido);
     if (Math.abs(total - Number(pedido.total)) > 0.01) {
       logger.warn(
         `Total divergente no pedido ${pedidoId}: recebido ${pedido.total}, real ${total}. Usando o valor real.`

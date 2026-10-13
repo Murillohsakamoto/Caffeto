@@ -332,6 +332,7 @@ class _OrderCardState extends State<_OrderCard> {
   @override
   Widget build(BuildContext context) {
     final status = widget.data['status'] as String? ?? '';
+    final tipoEntrega = widget.data['tipoEntrega'] as String? ?? 'retirada';
     final itens = (widget.data['itens'] as List<dynamic>?) ?? [];
     final total = (widget.data['total'] as num?)?.toDouble() ?? 0.0;
     final metodo = widget.data['metodoPagamento'] as String? ?? '';
@@ -512,7 +513,7 @@ class _OrderCardState extends State<_OrderCard> {
                 const SizedBox(height: 8),
                 _buildRetiradaInfo(status),
                 const SizedBox(height: 12),
-                _buildActionButton(status),
+                _buildActionButton(status, tipoEntrega),
               ],
             ),
           ),
@@ -524,6 +525,8 @@ class _OrderCardState extends State<_OrderCard> {
   Widget _buildRetiradaInfo(String status) {
     final horario = widget.data['horarioRetirada'] as String?;
     final prontoEm = widget.data['prontoEm'] as Timestamp?;
+    final tipoEntrega = widget.data['tipoEntrega'] as String? ?? 'retirada';
+    final endereco = widget.data['enderecoEntrega'] as Map<String, dynamic>?;
 
     String? countdownText;
     Color countdownColor = const Color(0xFF9E9E9E);
@@ -539,17 +542,29 @@ class _OrderCardState extends State<_OrderCard> {
       }
     }
 
+    final String label;
+    if (tipoEntrega == 'entrega' && endereco != null) {
+      label =
+          'Entrega: Prédio ${endereco['predio']}, ${endereco['andar']}º andar, ${endereco['sala']}';
+    } else if (horario != null) {
+      label = 'Retirada às $horario';
+    } else {
+      label = 'Retirada imediata';
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            horario != null ? 'Retirada às $horario' : 'Retirada imediata',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF9E9E9E),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9E9E9E),
+              ),
             ),
           ),
           if (countdownText != null)
@@ -574,7 +589,7 @@ class _OrderCardState extends State<_OrderCard> {
     );
   }
 
-  Widget _buildActionButton(String status) {
+  Widget _buildActionButton(String status, String tipoEntrega) {
     if (_updating) {
       return const Center(
         child: SizedBox(
@@ -621,6 +636,27 @@ class _OrderCardState extends State<_OrderCard> {
             ),
             elevation: 0,
             padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
+    if (status == 'Pronto' && tipoEntrega == 'entrega') {
+      // Pedido de entrega: a partir daqui é com quem está na tela de
+      // entregas, a cozinha não marca mais nada nesse pedido.
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F0E8),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          'Aguardando retirada pelo entregador',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF9E9E9E),
           ),
         ),
       );
