@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excluir conta — Caffeto</title>
+<link rel="icon" href="mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF7F1;
+    --surface:#F5EEE1;
+    --surface-2:#ECE0CC;
+    --text:#251A12;
+    --text-muted:#6B5D4F;
+    --accent:#9C6B32;
+    --accent-strong:#6B3E1D;
+    --border:#E2D3B8;
+    --warn-bg:#F6E9D2;
+    --warn-border:#D8A24A;
+    --warn-text:#6B3E1D;
+    --shadow: 0 1px 2px rgba(37,26,18,.06), 0 8px 24px rgba(37,26,18,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#17110D;
+      --surface:#211812;
+      --surface-2:#2B2018;
+      --text:#F3E9DB;
+      --text-muted:#BBA792;
+      --accent:#E3B36B;
+      --accent-strong:#F0C583;
+      --border:#3A2C20;
+      --warn-bg:#3A2C14;
+      --warn-border:#B98429;
+      --warn-text:#F0C583;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17110D;
+    --surface:#211812;
+    --surface-2:#2B2018;
+    --text:#F3E9DB;
+    --text-muted:#BBA792;
+    --accent:#E3B36B;
+    --accent-strong:#F0C583;
+    --border:#3A2C20;
+    --warn-bg:#3A2C14;
+    --warn-border:#B98429;
+    --warn-text:#F0C583;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  html{ color-scheme: light dark; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Work Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:16px;
+    line-height:1.65;
+    padding-inline:20px;
+    padding-block:32px 64px;
+  }
+  a{color:var(--accent);}
+  h1,h2,h3{
+    font-family:"Fraunces",Georgia,"Times New Roman",serif;
+    color:var(--accent-strong);
+    text-wrap:balance;
+    line-height:1.2;
+  }
+
+  .page{
+    max-width:1040px;
+    margin-inline:auto;
+  }
+
+  .masthead{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding-bottom:28px;
+    margin-bottom:28px;
+    border-bottom:1px solid var(--border);
+    flex-wrap:wrap;
+  }
+  .masthead img{
+    width:56px;
+    height:56px;
+    object-fit:contain;
+    flex-shrink:0;
+  }
+  .masthead .titles{flex:1 1 auto; min-width:200px;}
+  .masthead h1{
+    font-size:clamp(1.5rem, 1.1rem + 1.4vw, 2.1rem);
+    font-weight:600;
+    margin:0 0 2px;
+  }
+  .masthead .meta{
+    color:var(--text-muted);
+    font-size:.9rem;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    background:var(--surface-2);
+    color:var(--accent-strong);
+    border:1px solid var(--border);
+    border-radius:99px;
+    padding:3px 12px;
+    font-size:.78rem;
+    font-weight:600;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+    white-space:nowrap;
+  }
+
+  .layout{
+    display:grid;
+    grid-template-columns:220px minmax(0,1fr);
+    gap:48px;
+    align-items:start;
+  }
+  @media (max-width:860px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  nav.toc{
+    position:sticky;
+    top:24px;
+  }
+  @media (max-width:860px){
+    nav.toc{
+      position:static;
+      display:flex;
+      gap:8px;
+      overflow-x:auto;
+      padding-bottom:8px;
+      margin-bottom:8px;
+      -webkit-overflow-scrolling:touch;
+    }
+    nav.toc a{white-space:nowrap;}
+  }
+  nav.toc .toc-label{
+    font-size:.72rem;
+    font-weight:600;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-bottom:10px;
+    display:block;
+  }
+  @media (max-width:860px){ nav.toc .toc-label{display:none;} }
+  nav.toc ol{
+    list-style:none;
+    margin:0; padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  @media (max-width:860px){ nav.toc ol{flex-direction:row;} }
+  nav.toc a{
+    display:block;
+    padding:7px 10px;
+    border-radius:8px;
+    color:var(--text-muted);
+    text-decoration:none;
+    font-size:.88rem;
+    border:1px solid transparent;
+  }
+  @media (max-width:860px){
+    nav.toc a{
+      background:var(--surface);
+      border-color:var(--border);
+    }
+  }
+  nav.toc a:hover{background:var(--surface); color:var(--text);}
+
+  main{max-width:680px;}
+
+  section{
+    padding-block:22px;
+    border-bottom:1px solid var(--border);
+    scroll-margin-top:20px;
+  }
+  section:last-of-type{border-bottom:none;}
+  section h2{
+    font-size:1.3rem;
+    font-weight:600;
+    margin:0 0 12px;
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  section h2 .num{
+    font-variant-numeric:tabular-nums;
+    color:var(--accent);
+    font-size:.95rem;
+    font-weight:600;
+  }
+  section p{margin:0 0 12px;}
+  section p:last-child{margin-bottom:0;}
+  section ul{margin:0 0 12px; padding-left:1.2em;}
+  section li{margin-bottom:6px;}
+  section li:last-child{margin-bottom:0;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px 18px;
+    margin:14px 0;
+  }
+  .card h3{
+    font-size:.95rem;
+    font-weight:600;
+    margin:0 0 6px;
+    color:var(--text);
+    font-family:"Work Sans",sans-serif;
+  }
+  .card p{font-size:.92rem; color:var(--text-muted); margin:0;}
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin:14px 0;
+    font-size:.9rem;
+  }
+  th,td{
+    text-align:left;
+    padding:9px 10px;
+    border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  th{
+    color:var(--text-muted);
+    font-weight:600;
+    font-size:.78rem;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+
+  footer{
+    margin-top:40px;
+    padding-top:24px;
+    border-top:1px solid var(--border);
+    color:var(--text-muted);
+    font-size:.85rem;
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="masthead">
+    <img src="mark.png" alt="Caffeto">
+    <div class="titles">
+      <h1>Como excluir sua conta</h1>
+      <div class="meta">
+        <span>Caffeto — cafeteria &amp; aplicativo de pedidos</span>
+        <span class="badge">v1.0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout" style="grid-template-columns:1fr;">
+    <main>
+
+      <section id="pelo-app">
+        <h2><span class="num">1</span> Pelo aplicativo (na hora)</h2>
+        <ol>
+          <li>Abra o app <strong>Caffeto</strong> e entre na sua conta.</li>
+          <li>Toque na aba <strong>Perfil</strong>.</li>
+          <li>Toque em <strong>Excluir conta</strong> e confirme.</li>
+        </ol>
+        <p>A exclusão é imediata e não pode ser desfeita.</p>
+      </section>
+
+      <section id="por-email">
+        <h2><span class="num">2</span> Sem acesso ao aplicativo</h2>
+        <p>
+          Envie um e-mail para
+          <a href="mailto:vitellipires@gmail.com?subject=Excluir%20minha%20conta%20Caffeto">vitellipires@gmail.com</a>
+          com o assunto <strong>"Excluir minha conta Caffeto"</strong>, a partir do e-mail cadastrado na conta.
+          Excluímos a conta em até 15 dias e respondemos confirmando.
+        </p>
+      </section>
+
+      <section id="o-que-e-apagado">
+        <h2><span class="num">3</span> O que é apagado e o que é mantido</h2>
+        <table>
+          <thead>
+            <tr><th>Dado</th><th>O que acontece</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Nome, e-mail e login</td><td>Apagados</td></tr>
+            <tr><td>Foto de perfil</td><td>Apagada</td></tr>
+            <tr><td>Endereços salvos (prédio, andar e sala)</td><td>Apagados</td></tr>
+            <tr><td>Identificador do aparelho para notificações</td><td>Apagado</td></tr>
+            <tr><td>Histórico de pedidos</td><td>Mantido apenas pelo prazo exigido pela legislação fiscal brasileira</td></tr>
+          </tbody>
+        </table>
+        <p>Mais detalhes na <a href="/privacidade">Política de Privacidade</a>.</p>
+      </section>
+
+      <footer>
+        <span>Caffeto — Excluir conta</span>
+        <span>Última atualização: 14 de outubro de 2026</span>
+      </footer>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>
