@@ -1,4 +1,5 @@
-# Codemagic: monta o app iOS num Mac na nuvem e envia para o App Store Connect.
+# Codemagic: monta o app iOS num Mac na nuvem e envia para o App Store Connect,
+# e o app Android (.aab) para enviar ao Google Play.
 # Pré-requisitos (feitos uma vez no site do Codemagic):
 #   1. Teams > Integrations > Developer Portal: conectar a chave de API da Apple
 #      com o nome exato "Codemagic".
@@ -47,6 +48,46 @@ workflows:
         auth: integration
         submit_to_testflight: false
         submit_to_app_store: false   # o envio para análise é feito manualmente, depois de revisar a ficha
+
+  # Android: gera o .aab (Android App Bundle) assinado com a chave de upload.
+  # Pré-requisito (feito uma vez no site do Codemagic): Teams > Code signing
+  # identities > Android keystores, com o Reference name "caffeto_keystore".
+  # O primeiro envio para o Google Play é manual: baixe o .aab nos artefatos
+  # do build e envie no Play Console.
+  android-playstore:
+    name: Android - Play Store
+    max_build_duration: 45
+    instance_type: linux_x2
+    environment:
+      flutter: stable
+      android_signing:
+        - caffeto_keystore
+    triggering:
+      events: []   # roda só quando você clicar em "Start new build"
+    scripts:
+      - name: Baixar pacotes do Flutter
+        script: flutter pub get
+      - name: Configurar a chave de assinatura
+        script: |
+          # Sem a chave o Gradle assinaria com a chave de debug, que o Google
+          # Play recusa. Para o build aqui em vez de gerar um .aab inútil.
+          if [ -z "$CM_KEYSTORE_PATH" ]; then
+            echo "Keystore 'caffeto_keystore' não encontrado no Codemagic." >&2
+            exit 1
+          fi
+          cat > "$CM_BUILD_DIR/android/key.properties" <<PROPS
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_KEYSTORE_PATH
+          PROPS
+      - name: Gerar o app (.aab)
+        script: |
+          echo "Número do build: $BUILD_NUMBER"
+          flutter build appbundle --release --build-number=$BUILD_NUMBER
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+      - build/app/outputs/mapping/release/mapping.txt
 
   # Tira os prints da App Store num iPhone virtual de 6,9" (1320x2868).
   # Pré-requisito: no app do Codemagic, aba "Environment variables", grupo
