@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'cart_controller.dart';
 import 'main.dart';
 
 enum _PaymentMethod { pix, card }
@@ -78,6 +79,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final data = snap.data();
       if (data == null || !mounted) return;
       final status = data['status'] as String?;
+      final acabouDeSerRecusado = status == 'Pagamento recusado' && !_pagamentoRecusado;
       setState(() {
         _pedidoData = data;
         if (_statusPosPagamento.contains(status)) {
@@ -87,6 +89,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _pagamentoRecusado = true;
         }
       });
+      // Restaura o carrinho com o que tinha nesse pedido — se não, o
+      // cliente fica com a sacola vazia (foi limpa ao criar o pedido,
+      // antes de saber se o pagamento ia dar certo) e tem que remontar
+      // tudo do zero pra tentar com outros itens.
+      if (acabouDeSerRecusado) {
+        CartController.instance
+            .restaurarItens(data['itens'] as List<dynamic>? ?? []);
+      }
     });
   }
 

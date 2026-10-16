@@ -8,6 +8,7 @@ const STATUS = {
   aguardando: 'Aguardando preparo',
   emPreparo: 'Em preparo',
   pronto: 'Pronto',
+  entregue: 'Entregue',
 };
 
 const COLUMN_META = [
@@ -85,17 +86,24 @@ function OrderCard({ doc: orderDoc, columnColor }) {
   const total = data.total ?? 0;
   const metodo = data.metodoPagamento ?? '';
   const hora = formatTime(data.criadoEm);
+  const tipoEntrega = data.tipoEntrega ?? 'retirada';
+  const endereco = data.enderecoEntrega;
+  // Pedido de entrega "Pronto" não é mais com a cozinha — quem marca como
+  // entregue é a tela de entregas (papel "entregador"), não aqui.
+  const ehEntregaProntaParaEntregador = status === STATUS.pronto && tipoEntrega === 'entrega';
 
   async function advance() {
     const next =
       status === STATUS.aguardando ? STATUS.emPreparo :
-      status === STATUS.emPreparo ? STATUS.pronto : null;
+      status === STATUS.emPreparo ? STATUS.pronto :
+      status === STATUS.pronto && !ehEntregaProntaParaEntregador ? STATUS.entregue : null;
     if (!next) return;
     setUpdating(true);
     try {
       const update = { status: next };
       if (next === STATUS.emPreparo) update.iniciadoEm = serverTimestamp();
       if (next === STATUS.pronto) update.prontoEm = serverTimestamp();
+      if (next === STATUS.entregue) update.entregueEm = serverTimestamp();
       await updateDoc(doc(db, 'pedidos', id), update);
     } catch {
       setUpdating(false);
@@ -104,11 +112,14 @@ function OrderCard({ doc: orderDoc, columnColor }) {
 
   const btnLabel =
     status === STATUS.aguardando ? 'Iniciar preparo' :
-    status === STATUS.emPreparo ? 'Marcar como pronto' : null;
+    status === STATUS.emPreparo ? 'Marcar como pronto' :
+    ehEntregaProntaParaEntregador ? null :
+    status === STATUS.pronto ? 'Marcar como entregue' : null;
 
   const btnColor =
     status === STATUS.aguardando ? '#2196F3' :
-    status === STATUS.emPreparo ? '#4CAF50' : null;
+    status === STATUS.emPreparo ? '#4CAF50' :
+    status === STATUS.pronto ? '#9C27B0' : null;
 
   return (
     <div style={cs.card}>
@@ -128,11 +139,26 @@ function OrderCard({ doc: orderDoc, columnColor }) {
 
       {/* Items */}
       <div style={cs.cardBody}>
+        {tipoEntrega === 'entrega' && (
+          <div style={cs.enderecoBox}>
+            📍 {endereco
+              ? `Prédio ${endereco.predio} · ${endereco.andar}º andar · ${endereco.sala}`
+              : 'Endereço não informado'}
+          </div>
+        )}
+
         <div style={cs.itemList}>
           {itens.map((item, i) => (
             <div key={i} style={cs.itemRow}>
               <span style={cs.qty}>{item.qty}x</span>
-              <span style={cs.itemName}>{item.nome}</span>
+              <div>
+                <div style={cs.itemName}>{item.nome}</div>
+                {Array.isArray(item.itensCombo) && item.itensCombo.length > 0 && (
+                  <div style={cs.comboSub}>
+                    {item.itensCombo.map((c) => `${c.qty}x ${c.nome}`).join(', ')}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -145,7 +171,7 @@ function OrderCard({ doc: orderDoc, columnColor }) {
         </div>
 
         {/* Action button */}
-        {btnLabel && (
+        {btnLabel ? (
           <button
             style={{ ...cs.actionBtn, background: updating ? '#E0E0E0' : btnColor }}
             onClick={advance}
@@ -153,7 +179,9 @@ function OrderCard({ doc: orderDoc, columnColor }) {
           >
             {updating ? <Spinner size={18} color="#fff" /> : btnLabel}
           </button>
-        )}
+        ) : ehEntregaProntaParaEntregador ? (
+          <div style={cs.waitingBox}>Aguardando retirada pelo entregador</div>
+        ) : null}
       </div>
     </div>
   );
@@ -494,6 +522,15 @@ const cs = {
   cardBody: {
     padding: '12px 14px 14px',
   },
+  enderecoBox: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#1A1A1A',
+    background: '#F5F0E8',
+    borderRadius: 10,
+    padding: '8px 10px',
+    marginBottom: 12,
+  },
   itemList: {
     display: 'flex',
     flexDirection: 'column',
@@ -501,8 +538,25 @@ const cs = {
   },
   itemRow: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
+  },
+  comboSub: {
+    fontSize: 11,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  waitingBox: {
+    width: '100%',
+    marginTop: 12,
+    padding: '10px',
+    borderRadius: 20,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#9E9E9E',
+    background: '#F5F0E8',
+    textAlign: 'center',
+    boxSizing: 'border-box',
   },
   qty: {
     width: 30,

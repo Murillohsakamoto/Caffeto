@@ -701,3 +701,67 @@ exports.notificarPedidoPronto = onDocumentUpdated(
     }
   }
 );
+
+async function exigirAdmin(uid) {
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "É preciso estar logado.");
+  }
+  const snap = await db.collection("usuarios").doc(uid).get();
+  const data = snap.data() || {};
+  if (data.admin !== true && data.master !== true) {
+    throw new HttpsError("permission-denied", "Só admin pode fazer isso.");
+  }
+}
+
+/**
+ * FUNÇÃO 6 — Atualizar imagem de um produto do cardápio
+ * Chamada pelo admin ao trocar a foto de um produto. Sobe pelo Admin SDK
+ * (em vez de upload direto do app pro Storage) porque as Storage Rules não
+ * enxergam o banco nomeado "caffeto" pra checar isAdmin() — então o
+ * controle de permissão é feito aqui, lendo o Firestore com o SDK normal.
+ * Imagem pública (mesma visibilidade do cardápio em si, já público pra
+ * visitante ver sem login).
+ */
+exports.atualizarImagemCardapio = onCall(
+  { region: "southamerica-east1" },
+  async (request) => {
+    await exigirAdmin(request.auth?.uid);
+
+    const { itemId, imagemBase64 } = request.data;
+    if (!itemId || typeof itemId !== "string") {
+      throw new HttpsError("invalid-argument", "itemId é obrigatório.");
+    }
+    if (!imagemBase64 || typeof imagemBase64 !== "string") {
+      throw new HttpsError("invalid-argument", "imagemBase64 é obrigatório.");
+    }
+
+    const itemRef = db.collection("cardapio").doc(itemId);
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) {
+      throw new HttpsError("not-found", "Produto não encontrado.");
+    }
+
+    const buffer = Buffer.from(imagemBase64, "base64");
+    if (buffer.length > 5 * 1024 * 1024) {
+      throw new HttpsError("invalid-argument", "Imagem maior que 5MB.");
+    }
+
+    // Token de download em vez de makePublic(): funciona independente do
+    // bucket estar em modo "uniform bucket-level access" (onde ACL por
+    // objeto não existe) e segue o mesmo esquema que o SDK cliente do
+    // Firebase Storage usa.
+    const token = crypto.randomUUID();
+    const file = admin.storage().bucket().file(`cardapio/${itemId}.jpg`);
+    await file.save(buffer, {
+      contentType: "image/jpeg",
+      metadata: { metadata: { firebaseStorageDownloadTokens: token } },
+    });
+
+    const url =
+      `https://firebasestorage.googleapis.com/v0/b/${file.bucket.name}/o/` +
+      `${encodeURIComponent(file.name)}?alt=media&token=${token}`;
+    await itemRef.update({ imagem_url: url });
+
+    return { url };
+  }
+);

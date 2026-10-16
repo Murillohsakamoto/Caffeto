@@ -16,7 +16,8 @@ export default function App() {
       }
       try {
         const snap = await getDoc(doc(db, 'usuarios', user.uid));
-        if (snap.exists() && snap.data().admin === true) {
+        const data = snap.data() || {};
+        if (data.admin === true || data.master === true || data.cozinha === true) {
           setState('kitchen');
         } else {
           setState('denied');

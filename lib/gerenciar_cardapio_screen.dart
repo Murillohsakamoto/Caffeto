@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 import 'main.dart';
 
 /// Tela de admin: cadastro de produtos (criar/editar/excluir) e tempo
@@ -133,6 +138,19 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
     final itensCombo = ((data?['itensCombo'] as List<dynamic>?) ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
+    String? imagemUrlAtual = data?['imagem_url'] as String?;
+    XFile? imagemEscolhida;
+
+    Future<void> escolherImagem(StateSetter setSheetState) async {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      if (image == null) return;
+      setSheetState(() => imagemEscolhida = image);
+    }
 
     // Lista plana de produtos existentes pra montar o combo (exclui outros
     // combos e, ao editar, o próprio item — não faz sentido um combo se
@@ -204,6 +222,57 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                 Text(
                   item == null ? 'Novo produto' : 'Editar produto',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: GestureDetector(
+                    onTap: () => escolherImagem(setSheetState),
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F0E8),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (imagemEscolhida != null)
+                            FutureBuilder<Uint8List>(
+                              future: imagemEscolhida!.readAsBytes(),
+                              builder: (_, snap) => snap.hasData
+                                  ? Image.memory(snap.data!, fit: BoxFit.cover)
+                                  : const SizedBox.shrink(),
+                            )
+                          else if (imagemUrlAtual != null)
+                            CachedNetworkImage(
+                              imageUrl: imagemUrlAtual,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, _, _) => const Icon(
+                                  Icons.image_not_supported_outlined,
+                                  color: Color(0xFFC8A96E)),
+                            )
+                          else
+                            const Icon(Icons.add_a_photo_outlined,
+                                color: Color(0xFFC8A96E), size: 32),
+                          Positioned(
+                            right: 4,
+                            bottom: 4,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFC8A96E),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.edit,
+                                  color: Colors.white, size: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 20),
                 TextField(
@@ -315,17 +384,31 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                       }
 
                       try {
+                        DocumentReference itemRef;
                         if (item == null) {
-                          await db.collection('cardapio').add(novoData);
+                          itemRef = await db.collection('cardapio').add(novoData);
                         } else {
+                          itemRef = item.reference;
                           if (tempo == null) {
                             novoData['tempoEstimadoMin'] = FieldValue.delete();
                           }
                           if (!isCombo) {
                             novoData['itensCombo'] = FieldValue.delete();
                           }
-                          await item.reference.update(novoData);
+                          await itemRef.update(novoData);
                         }
+
+                        if (imagemEscolhida != null) {
+                          final bytes = await imagemEscolhida!.readAsBytes();
+                          await FirebaseFunctions.instanceFor(
+                                  region: 'southamerica-east1')
+                              .httpsCallable('atualizarImagemCardapio')
+                              .call({
+                            'itemId': itemRef.id,
+                            'imagemBase64': base64Encode(bytes),
+                          });
+                        }
+
                         if (ctx.mounted) Navigator.pop(ctx);
                         _carregar();
                       } catch (e) {

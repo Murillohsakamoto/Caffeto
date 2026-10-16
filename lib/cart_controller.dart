@@ -43,6 +43,25 @@ class CartController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Restaura o carrinho a partir dos itens gravados num pedido — usado
+  /// quando um pagamento é recusado, pra não perder o que o cliente já
+  /// tinha montado (o carrinho é esvaziado assim que o pedido é criado,
+  /// antes de saber se o pagamento vai dar certo).
+  void restaurarItens(List<dynamic> itensPedido) {
+    items.clear();
+    for (final item in itensPedido) {
+      final i = item as Map<String, dynamic>;
+      items.add({
+        'name': i['nome'],
+        'price': (i['preco'] as num).toDouble(),
+        'qty': (i['qty'] as num).toInt(),
+        'imageUrl': i['imageUrl'],
+        if (i['itensCombo'] != null) 'itensCombo': i['itensCombo'],
+      });
+    }
+    notifyListeners();
+  }
+
   bool contains(String name) => items.any((i) => i['name'] == name);
 
   int qtyOf(String name) {

@@ -15,6 +15,15 @@ service firebase.storage {
         fileName == request.auth.uid + '.jpg';
     }
 
+    // Foto dos produtos do cardápio: cardapio/{itemId}.jpg. Leitura pública
+    // (o cardápio já é público pra visitante ver sem login — regra 5.1.1(v)
+    // da Apple). Escrita só pela Cloud Function atualizarImagemCardapio
+    // (Admin SDK, que ignora estas regras), nunca direto do app.
+    match /cardapio/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Bloqueia qualquer outro caminho por padrão.
     match /{allPaths=**} {
       allow read, write: if false;
