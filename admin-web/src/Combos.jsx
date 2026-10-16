@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc,
 } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db, atualizarImagemCardapio } from './firebase';
 import { Spinner } from './App';
 
 // ─── Modal ──────────────────────────────────────────────────────────────────
@@ -38,16 +37,29 @@ function ComboForm({ initial, comboId, allProducts, onSave, onClose }) {
   const [preco, setPreco] = useState(initial?.preco?.toString() || '');
   const [disponivel, setDisponivel] = useState(initial?.disponivel ?? true);
   const [destaque, setDestaque] = useState(initial?.destaque ?? false);
-  const [itens, setItens] = useState(initial?.itensCombo || ['']);
+  const [itens, setItens] = useState(initial?.itensCombo || []);
+  const [produtoEscolhido, setProdutoEscolhido] = useState('');
   const [imgFile, setImgFile] = useState(null);
   const [imgPreview, setImgPreview] = useState(initial?.imagem_url || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef();
 
-  function addItem() { setItens(i => [...i, '']); }
+  function addItem() {
+    if (!produtoEscolhido) return;
+    setItens(i => {
+      const existente = i.findIndex(e => e.nome === produtoEscolhido);
+      if (existente >= 0) {
+        return i.map((e, j) => j === existente ? { ...e, qty: e.qty + 1 } : e);
+      }
+      return [...i, { nome: produtoEscolhido, qty: 1 }];
+    });
+  }
   function removeItem(idx) { setItens(i => i.filter((_, j) => j !== idx)); }
-  function setItem(idx, val) { setItens(i => i.map((v, j) => j === idx ? val : v)); }
+  function setQty(idx, qty) {
+    if (qty < 1) return;
+    setItens(i => i.map((e, j) => j === idx ? { ...e, qty } : e));
+  }
 
   function onFileChange(e) {
     const file = e.target.files[0];
@@ -60,8 +72,7 @@ function ComboForm({ initial, comboId, allProducts, onSave, onClose }) {
     if (!nome.trim()) { setError('Nome é obrigatório.'); return; }
     const precoNum = parseFloat(preco);
     if (isNaN(precoNum) || precoNum <= 0) { setError('Preço inválido.'); return; }
-    const itensFiltrados = itens.map(i => i.trim()).filter(Boolean);
-    if (itensFiltrados.length === 0) { setError('Adicione ao menos um item ao combo.'); return; }
+    if (itens.length === 0) { setError('Adicione ao menos um item ao combo.'); return; }
 
     setSaving(true);
     setError('');
@@ -69,9 +80,9 @@ function ComboForm({ initial, comboId, allProducts, onSave, onClose }) {
       const data = {
         nome: nome.trim(),
         preco: precoNum,
-        categoria: 'Combo',
-        tipo: 'combo',
-        itensCombo: itensFiltrados,
+        categoria: 'Combos',
+        combo: true,
+        itensCombo: itens,
         disponivel,
         destaque,
       };
@@ -85,10 +96,7 @@ function ComboForm({ initial, comboId, allProducts, onSave, onClose }) {
       }
 
       if (imgFile) {
-        const sRef = storageRef(storage, `cardapio/${docId}`);
-        await uploadBytes(sRef, imgFile);
-        const url = await getDownloadURL(sRef);
-        await updateDoc(doc(db, 'cardapio', docId), { imagem_url: url });
+        await atualizarImagemCardapio(docId, imgFile);
       }
 
       onSave();
@@ -129,20 +137,32 @@ function ComboForm({ initial, comboId, allProducts, onSave, onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {itens.map((item, idx) => (
             <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ flex: 1, fontSize: 14, color: '#1A1A1A' }}>{item.nome}</span>
               <input
-                style={{ ...cf.input, flex: 1 }}
-                value={item}
-                onChange={e => setItem(idx, e.target.value)}
-                placeholder={`Item ${idx + 1} (ex: Café Espresso)`}
+                style={{ ...cf.input, width: 56, textAlign: 'center', padding: '8px' }}
+                type="number"
+                min="1"
+                value={item.qty}
+                onChange={e => setQty(idx, parseInt(e.target.value, 10) || 1)}
               />
-              <button
-                style={cf.removeItemBtn}
-                onClick={() => removeItem(idx)}
-                disabled={itens.length === 1}
-              >✕</button>
+              <button style={cf.removeItemBtn} onClick={() => removeItem(idx)}>✕</button>
             </div>
           ))}
-          <button style={cf.addItemBtn} onClick={addItem}>+ Adicionar item</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select
+              style={{ ...cf.input, flex: 1 }}
+              value={produtoEscolhido}
+              onChange={e => setProdutoEscolhido(e.target.value)}
+            >
+              <option value="">Escolha um produto...</option>
+              {allProducts.map(p => (
+                <option key={p.id} value={p.nome}>{p.nome}</option>
+              ))}
+            </select>
+            <button style={cf.addItemBtn} onClick={addItem} disabled={!produtoEscolhido}>
+              + Adicionar
+            </button>
+          </div>
         </div>
       </div>
 
@@ -196,8 +216,8 @@ export default function Combos() {
   useEffect(() => {
     return onSnapshot(collection(db, 'cardapio'), snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setCombos(all.filter(p => p.tipo === 'combo').sort((a, b) => (a.nome || '').localeCompare(b.nome || '')));
-      setProducts(all.filter(p => p.tipo !== 'combo'));
+      setCombos(all.filter(p => p.combo === true).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')));
+      setProducts(all.filter(p => p.combo !== true));
       setLoading(false);
     });
   }, []);
@@ -256,7 +276,7 @@ export default function Combos() {
                 {/* Items list */}
                 <div style={s.itensList}>
                   {(c.itensCombo || []).map((item, i) => (
-                    <span key={i} style={s.itemChip}>{item}</span>
+                    <span key={i} style={s.itemChip}>{item.qty}x {item.nome}</span>
                   ))}
                 </div>
 

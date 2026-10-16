@@ -24,7 +24,8 @@ export default function App() {
       if (!user) { setState('login'); return; }
       try {
         const snap = await getDoc(doc(db, 'usuarios', user.uid));
-        setState(snap.exists() && snap.data().master === true ? 'admin' : 'denied');
+        const data = snap.data() || {};
+        setState(data.admin === true || data.master === true ? 'admin' : 'denied');
       } catch {
         setState('denied');
       }

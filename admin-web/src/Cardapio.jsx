@@ -2,13 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc,
 } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db, atualizarImagemCardapio } from './firebase';
 import { Spinner } from './App';
 
-const CATEGORIAS = ['Café', 'Gelado', 'Suco', 'Sobremesa', 'Salgado', 'Sanduíche', 'Refeição', 'Outro'];
-
-const EMPTY_FORM = { nome: '', preco: '', categoria: 'Café', disponivel: true, destaque: false };
+const EMPTY_FORM = { nome: '', preco: '', categoria: '', disponivel: true, destaque: false };
 
 // ─── Modal ─────────────────────────────────────────────────────────────────
 
@@ -37,7 +34,7 @@ const ms = {
 
 // ─── Product Form ──────────────────────────────────────────────────────────
 
-function ProductForm({ initial, productId, onSave, onClose }) {
+function ProductForm({ initial, productId, categorias, onSave, onClose }) {
   const [form, setForm] = useState(initial || EMPTY_FORM);
   const [imgFile, setImgFile] = useState(null);
   const [imgPreview, setImgPreview] = useState(initial?.imagem_url || '');
@@ -78,10 +75,7 @@ function ProductForm({ initial, productId, onSave, onClose }) {
       }
 
       if (imgFile) {
-        const sRef = storageRef(storage, `cardapio/${docId}`);
-        await uploadBytes(sRef, imgFile);
-        const url = await getDownloadURL(sRef);
-        await updateDoc(doc(db, 'cardapio', docId), { imagem_url: url });
+        await atualizarImagemCardapio(docId, imgFile);
       }
 
       onSave();
@@ -118,9 +112,16 @@ function ProductForm({ initial, productId, onSave, onClose }) {
         </div>
         <div>
           <label style={fs.label}>Categoria</label>
-          <select style={fs.select} value={form.categoria} onChange={e => set('categoria', e.target.value)}>
-            {CATEGORIAS.map(c => <option key={c}>{c}</option>)}
-          </select>
+          <input
+            style={fs.input}
+            list="categorias-lista"
+            value={form.categoria}
+            onChange={e => set('categoria', e.target.value)}
+            placeholder="Ex: Café"
+          />
+          <datalist id="categorias-lista">
+            {categorias.map(c => <option key={c} value={c} />)}
+          </datalist>
         </div>
       </div>
 
@@ -219,7 +220,7 @@ export default function Cardapio() {
   useEffect(() => {
     return onSnapshot(collection(db, 'cardapio'), snap => {
       const all = snap.docs
-        .filter(d => d.data().tipo !== 'combo')
+        .filter(d => d.data().combo !== true)
         .map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
       setProducts(all);
@@ -340,7 +341,7 @@ export default function Cardapio() {
       {/* Modals */}
       {modal === 'add' && (
         <Modal title="Novo produto" onClose={() => setModal(null)}>
-          <ProductForm onSave={() => setModal(null)} onClose={() => setModal(null)} />
+          <ProductForm categorias={cats} onSave={() => setModal(null)} onClose={() => setModal(null)} />
         </Modal>
       )}
 
@@ -349,6 +350,7 @@ export default function Cardapio() {
           <ProductForm
             initial={selected}
             productId={selected.id}
+            categorias={cats}
             onSave={() => { setModal(null); setSelected(null); }}
             onClose={() => setModal(null)}
           />
