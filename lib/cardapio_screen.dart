@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'cart_controller.dart';
 import 'main.dart';
+import 'ordem_cardapio.dart';
 
 class CardapioScreen extends StatefulWidget {
   const CardapioScreen({super.key});
@@ -42,18 +43,34 @@ class _CardapioScreenState extends State<CardapioScreen> {
       _error = null;
     });
     try {
-      final snap = await db
-          .collection('cardapio')
-          .where('disponivel', isEqualTo: true)
-          .get();
+      final resultados = await Future.wait([
+        db.collection('cardapio').where('disponivel', isEqualTo: true).get(),
+        db.collection('categorias').get(),
+      ]);
+      final snap = resultados[0];
+
+      // Ordem definida pelo admin (arrastar e soltar): categorias pelo
+      // `ordem` em categorias/{nome}, produtos pelo `ordem` de cada um.
+      final ordemCategoria = <String, num>{};
+      for (final doc in resultados[1].docs) {
+        final ordem = doc.data()['ordem'] as num?;
+        if (ordem != null) ordemCategoria[doc.id] = ordem;
+      }
 
       final items = snap.docs.map((doc) => doc.data()).toList();
-
-      final cats = <String>[];
-      for (final item in items) {
-        final cat = item['categoria'] as String? ?? '';
-        if (cat.isNotEmpty && !cats.contains(cat)) cats.add(cat);
-      }
+      final cats = ordenarCategorias(
+        items
+            .map((i) => i['categoria'] as String? ?? '')
+            .where((c) => c.isNotEmpty),
+        ordemCategoria,
+      );
+      final posicao = {for (var i = 0; i < cats.length; i++) cats[i]: i};
+      items.sort((a, b) {
+        final ca = posicao[a['categoria']] ?? cats.length;
+        final cb = posicao[b['categoria']] ?? cats.length;
+        if (ca != cb) return ca.compareTo(cb);
+        return compararProdutos(a, b);
+      });
 
       if (mounted) {
         setState(() {

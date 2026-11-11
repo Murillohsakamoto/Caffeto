@@ -64,7 +64,8 @@ class EntregaScreen extends StatelessWidget {
         stream: db
             .collection('pedidos')
             .where('tipoEntrega', isEqualTo: 'entrega')
-            .where('status', whereIn: ['Aguardando preparo', 'Em preparo', 'Pronto'])
+            .where('status',
+                whereIn: ['Aguardando preparo', 'Em preparo', 'Pronto', 'Saiu para entrega'])
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -143,18 +144,23 @@ class _EntregaCardState extends State<_EntregaCard> {
         return const Color(0xFF2196F3);
       case 'Pronto':
         return const Color(0xFF4CAF50);
+      case 'Saiu para entrega':
+        return const Color(0xFF9C27B0);
       default:
         return const Color(0xFF9C27B0);
     }
   }
 
-  Future<void> _marcarEntregue() async {
+  Future<void> _avancar(String novoStatus) async {
     setState(() => _updating = true);
     try {
       await db.collection('pedidos').doc(widget.docId).update({
-        'status': 'Entregue',
-        'entregueEm': FieldValue.serverTimestamp(),
+        'status': novoStatus,
+        if (novoStatus == 'Saiu para entrega')
+          'saiuParaEntregaEm': FieldValue.serverTimestamp(),
+        if (novoStatus == 'Entregue') 'entregueEm': FieldValue.serverTimestamp(),
       });
+      if (mounted) setState(() => _updating = false);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -236,6 +242,14 @@ class _EntregaCardState extends State<_EntregaCard> {
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
                         ),
                       ),
+                      if ((widget.data['nomeCliente'] as String? ?? '').isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            widget.data['nomeCliente'] as String,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+                          ),
+                      ),
                     ],
                   ),
                 ),
@@ -274,7 +288,23 @@ class _EntregaCardState extends State<_EntregaCard> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _marcarEntregue,
+                      onPressed: () => _avancar('Saiu para entrega'),
+                      icon: const Icon(Icons.delivery_dining_outlined, size: 18),
+                      label: const Text('Saiu para entrega (avisa o cliente)'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF9C27B0),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  )
+                else if (status == 'Saiu para entrega')
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _avancar('Entregue'),
                       icon: const Icon(Icons.check_circle_outline, size: 18),
                       label: const Text('Marcar como entregue'),
                       style: ElevatedButton.styleFrom(

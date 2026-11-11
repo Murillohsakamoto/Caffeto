@@ -4,6 +4,7 @@ const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { getDownloadURL } = require("firebase-admin/storage");
 const crypto = require("crypto");
 
 admin.initializeApp();
@@ -663,19 +664,47 @@ exports.mercadopagoWebhook = onRequest(
 );
 
 /**
- * FUNÇÃO 5 — Notificar cliente quando o pedido fica pronto
- * Dispara quando a cozinha muda o status do pedido para "Pronto" (só nessa
- * transição — outras mudanças de status ou edições não geram push). Manda
- * a notificação pra todos os tokens FCM salvos em usuarios/{userId},
- * cadastrados pelo app (NotificationsService) a cada login/refresh de
- * token.
+ * FUNÇÃO 5 — Notificar cliente sobre o andamento do pedido
+ * Dispara só nas transições que interessam ao cliente:
+ * - Retirada: status vira "Pronto" → "Pode retirar no balcão".
+ * - Entrega: status vira "Saiu para entrega" → avisa que está a caminho do
+ *   endereço (prédio/andar/sala). O "Pronto" de um pedido de entrega não
+ *   gera push — o cliente não tem nada pra fazer nessa hora.
+ * Manda pra todos os tokens FCM salvos em usuarios/{userId}, cadastrados
+ * pelo app (NotificationsService) a cada login/refresh de token.
  */
+function mensagemDoStatus(pedido) {
+  const entrega = pedido.tipoEntrega === "entrega";
+  if (!entrega && pedido.status === "Pronto") {
+    return {
+      title: "Pedido pronto! ☕",
+      body: "Pode retirar no balcão da Caffeto.",
+    };
+  }
+  if (entrega && pedido.status === "Saiu para entrega") {
+    const end = pedido.enderecoEntrega || {};
+    const destino = [
+      end.predio ? `Prédio ${end.predio}` : null,
+      end.andar ? `${end.andar}º andar` : null,
+      end.sala ? end.sala : null,
+    ].filter(Boolean).join(", ");
+    return {
+      title: "Seu pedido saiu para entrega! 🛵",
+      body: destino ? `Está a caminho: ${destino}.` : "Está a caminho do seu endereço.",
+    };
+  }
+  return null;
+}
+
 exports.notificarPedidoPronto = onDocumentUpdated(
   { document: "pedidos/{pedidoId}", database: "caffeto", region: "southamerica-east1" },
   async (event) => {
     const antes = event.data.before.data();
     const depois = event.data.after.data();
-    if (antes.status === "Pronto" || depois.status !== "Pronto") return;
+    if (antes.status === depois.status) return;
+
+    const notification = mensagemDoStatus(depois);
+    if (!notification) return;
 
     const usuarioSnap = await db.collection("usuarios").doc(depois.userId).get();
     const tokens = usuarioSnap.data()?.fcmTokens;
@@ -683,10 +712,7 @@ exports.notificarPedidoPronto = onDocumentUpdated(
 
     const resposta = await admin.messaging().sendEachForMulticast({
       tokens,
-      notification: {
-        title: "Pedido pronto! ☕",
-        body: "Pode retirar no balcão da Caffeto.",
-      },
+      notification,
     });
 
     // Token inválido/expirado (app desinstalado, etc.) — remove pra não
@@ -699,5 +725,50 @@ exports.notificarPedidoPronto = onDocumentUpdated(
         fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensInvalidos),
       });
     }
+  }
+);
+
+/**
+ * FUNÇÃO 6 — Salvar foto de produto do cardápio
+ * Chamada pelo admin na tela de cardápio. A foto passa por aqui (e não vai
+ * direto do app pro Storage) porque as regras do Storage não conseguem
+ * consultar o banco nomeado "caffeto" pra saber se quem envia é admin.
+ * Recebe a imagem em base64 (o app já reduz pra no máximo 1080px), grava
+ * em cardapio/{uuid}.jpg e devolve a URL pública pra salvar em imagem_url.
+ */
+const TAMANHO_MAX_FOTO = 3 * 1024 * 1024;
+const TIPOS_FOTO = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+exports.salvarFotoProduto = onCall(
+  { region: "southamerica-east1" },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "É preciso estar logado.");
+    }
+    const perfil = (await db.collection("usuarios").doc(uid).get()).data() || {};
+    if (perfil.admin !== true && perfil.master !== true) {
+      throw new HttpsError("permission-denied", "Só o admin pode alterar fotos do cardápio.");
+    }
+
+    const { imagemBase64, contentType } = request.data || {};
+    const extensao = TIPOS_FOTO[contentType];
+    if (typeof imagemBase64 !== "string" || !extensao) {
+      throw new HttpsError("invalid-argument", "Envie uma imagem JPG, PNG ou WEBP.");
+    }
+    const buffer = Buffer.from(imagemBase64, "base64");
+    if (buffer.length === 0 || buffer.length > TAMANHO_MAX_FOTO) {
+      throw new HttpsError("invalid-argument", "A foto precisa ter até 3 MB.");
+    }
+
+    const caminho = `cardapio/${crypto.randomUUID()}.${extensao}`;
+    const arquivo = admin.storage().bucket().file(caminho);
+    await arquivo.save(buffer, {
+      contentType,
+      metadata: { cacheControl: "public, max-age=31536000" },
+    });
+    const url = await getDownloadURL(arquivo);
+    logger.info(`Foto de produto salva em ${caminho} por ${uid}`);
+    return { url };
   }
 );

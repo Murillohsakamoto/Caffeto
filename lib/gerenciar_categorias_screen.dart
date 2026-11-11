@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'main.dart';
+import 'ordem_cardapio.dart';
 
 /// Tela de admin: criar, renomear e excluir categorias do cardápio.
 /// Categoria também pode "existir" implicitamente só por estar escrita no
 /// campo `categoria` de algum produto — essa tela junta as duas fontes
 /// (coleção `categorias` + valores usados em `cardapio`) pra mostrar a
 /// lista completa.
+///
+/// A ordem da lista (arrastar pela alça ≡) é a mesma ordem em que as
+/// categorias aparecem pro cliente no cardápio — salva no campo `ordem` de
+/// cada doc em `categorias`.
 class GerenciarCategoriasScreen extends StatefulWidget {
   const GerenciarCategoriasScreen({super.key});
 
@@ -22,6 +28,9 @@ class _GerenciarCategoriasScreenState
   // nome -> quantidade de produtos
   final Map<String, int> _qtdProdutosPorCategoria = {};
   final Map<String, num> _tempoPorCategoria = {};
+  // Ordem de exibição (a mesma do cardápio do cliente).
+  List<String> _ordem = [];
+  bool _salvandoOrdem = false;
 
   @override
   void initState() {
@@ -44,11 +53,14 @@ class _GerenciarCategoriasScreenState
 
       _qtdProdutosPorCategoria.clear();
       _tempoPorCategoria.clear();
+      final ordemSalva = <String, num>{};
 
       for (final doc in categoriasSnap.docs) {
         _qtdProdutosPorCategoria.putIfAbsent(doc.id, () => 0);
         final tempo = doc.data()['tempoEstimadoMin'] as num?;
         if (tempo != null) _tempoPorCategoria[doc.id] = tempo;
+        final ordem = doc.data()['ordem'] as num?;
+        if (ordem != null) ordemSalva[doc.id] = ordem;
       }
       for (final doc in cardapioSnap.docs) {
         final categoria = doc.data()['categoria'] as String?;
@@ -56,6 +68,8 @@ class _GerenciarCategoriasScreenState
         _qtdProdutosPorCategoria[categoria] =
             (_qtdProdutosPorCategoria[categoria] ?? 0) + 1;
       }
+
+      _ordem = ordenarCategorias(_qtdProdutosPorCategoria.keys, ordemSalva);
 
       if (mounted) setState(() => _loading = false);
     } catch (_) {
@@ -115,7 +129,10 @@ class _GerenciarCategoriasScreenState
       return;
     }
     try {
-      await db.collection('categorias').doc(nome).set({'nome': nome});
+      await db
+          .collection('categorias')
+          .doc(nome)
+          .set({'nome': nome, 'ordem': _ordem.length}, SetOptions(merge: true));
       _carregar();
     } catch (e) {
       if (mounted) {
@@ -152,7 +169,10 @@ class _GerenciarCategoriasScreenState
       final categoriaAntigaRef = db.collection('categorias').doc(nomeAtual);
       final categoriaAntigaSnap = await categoriaAntigaRef.get();
       final tempoAtual = categoriaAntigaSnap.data()?['tempoEstimadoMin'] as num?;
-      final novaCategoriaData = <String, dynamic>{'nome': novoNome};
+      final novaCategoriaData = <String, dynamic>{
+        'nome': novoNome,
+        'ordem': _ordem.indexOf(nomeAtual) < 0 ? _ordem.length : _ordem.indexOf(nomeAtual),
+      };
       if (tempoAtual != null) novaCategoriaData['tempoEstimadoMin'] = tempoAtual;
       batch.set(db.collection('categorias').doc(novoNome), novaCategoriaData);
       if (categoriaAntigaSnap.exists) batch.delete(categoriaAntigaRef);
@@ -218,9 +238,40 @@ class _GerenciarCategoriasScreenState
     }
   }
 
+  Future<void> _reordenar(int de, int para) async {
+    if (para > de) para -= 1; // convenção do ReorderableListView
+    if (de == para) return;
+    final anterior = List<String>.from(_ordem);
+    setState(() {
+      final nome = _ordem.removeAt(de);
+      _ordem.insert(para, nome);
+      _salvandoOrdem = true;
+    });
+    try {
+      final batch = db.batch();
+      for (var i = 0; i < _ordem.length; i++) {
+        batch.set(
+          db.collection('categorias').doc(_ordem[i]),
+          {'nome': _ordem[i], 'ordem': i},
+          SetOptions(merge: true),
+        );
+      }
+      await batch.commit();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _ordem = anterior);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar a ordem: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _salvandoOrdem = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final categorias = _qtdProdutosPorCategoria.keys.toList()..sort();
+    final categorias = _ordem;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -260,22 +311,58 @@ class _GerenciarCategoriasScreenState
                   : RefreshIndicator(
                       color: const Color(0xFFC8A96E),
                       onRefresh: _carregar,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+                      child: ReorderableListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                        buildDefaultDragHandles: false,
+                        header: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.drag_indicator,
+                                  size: 16, color: Color(0xFF9E9E9E)),
+                              const SizedBox(width: 6),
+                              const Expanded(
+                                child: Text(
+                                  'Segure e arraste para mudar a ordem no cardápio do cliente',
+                                  style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 12),
+                                ),
+                              ),
+                              if (_salvandoOrdem)
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Color(0xFFC8A96E)),
+                                ),
+                            ],
+                          ),
+                        ),
                         itemCount: categorias.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        onReorder: _reordenar,
                         itemBuilder: (context, index) {
                           final nome = categorias[index];
                           final qtd = _qtdProdutosPorCategoria[nome] ?? 0;
                           final tempo = _tempoPorCategoria[nome];
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          return ReorderableDelayedDragStartListener(
+                            key: ValueKey('cat-$nome'),
+                            index: index,
+                            child: Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF5F0E8),
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: ListTile(
                               contentPadding: EdgeInsets.zero,
+                              leading: ReorderableDragStartListener(
+                                index: index,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.drag_indicator,
+                                      color: Color(0xFFC8A96E)),
+                                ),
+                              ),
                               title: Text(nome,
                                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                               subtitle: Text(
@@ -295,6 +382,7 @@ class _GerenciarCategoriasScreenState
                                   ),
                                 ],
                               ),
+                            ),
                             ),
                           );
                         },

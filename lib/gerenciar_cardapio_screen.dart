@@ -1,11 +1,21 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 import 'main.dart';
+import 'ordem_cardapio.dart';
 
 /// Tela de admin: cadastro de produtos (criar/editar/excluir) e tempo
 /// estimado de preparo por categoria (padrão) e por prato (sobrescreve o
 /// da categoria). O tempo estimado é usado na sacola pra filtrar horários
 /// de retirada inalcançáveis.
+///
+/// Dentro de cada categoria os produtos podem ser reordenados segurando e
+/// arrastando (alça ≡). A ordem fica no campo `ordem` de cada produto e é a
+/// mesma que o cliente vê no cardápio. A ordem das categorias é definida na
+/// tela Categorias.
 class GerenciarCardapioScreen extends StatefulWidget {
   const GerenciarCardapioScreen({super.key});
 
@@ -18,8 +28,10 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
   bool _loading = true;
   String? _error;
 
-  // categoria -> [itens]
+  // categoria -> [itens], já na ordem de exibição
   final Map<String, List<QueryDocumentSnapshot>> _porCategoria = {};
+  List<String> _ordemCategorias = [];
+  bool _salvandoOrdem = false;
   final Map<String, num> _tempoPorCategoria = {};
 
   @override
@@ -40,13 +52,21 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
         final categoria = (doc.data())['categoria'] as String? ?? 'Outros';
         _porCategoria.putIfAbsent(categoria, () => []).add(doc);
       }
+      for (final lista in _porCategoria.values) {
+        lista.sort((a, b) => compararProdutos(
+            a.data() as Map<String, dynamic>, b.data() as Map<String, dynamic>));
+      }
 
       final categoriasSnap = await db.collection('categorias').get();
       _tempoPorCategoria.clear();
+      final ordemSalva = <String, num>{};
       for (final doc in categoriasSnap.docs) {
         final tempo = doc.data()['tempoEstimadoMin'] as num?;
         if (tempo != null) _tempoPorCategoria[doc.id] = tempo;
+        final ordem = doc.data()['ordem'] as num?;
+        if (ordem != null) ordemSalva[doc.id] = ordem;
       }
+      _ordemCategorias = ordenarCategorias(_porCategoria.keys, ordemSalva);
 
       if (mounted) setState(() => _loading = false);
     } catch (_) {
@@ -104,7 +124,7 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
       await db.collection('categorias').doc(categoria).set({
         'nome': categoria,
         'tempoEstimadoMin': novo,
-      });
+      }, SetOptions(merge: true)); // merge: não apaga a `ordem` da categoria
       if (mounted) setState(() => _tempoPorCategoria[categoria] = novo);
     } catch (e) {
       if (mounted) {
@@ -113,6 +133,58 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
         );
       }
     }
+  }
+
+  Future<void> _reordenarProdutos(String categoria, int de, int para) async {
+    if (para > de) para -= 1; // convenção do ReorderableListView
+    if (de == para) return;
+    final itens = _porCategoria[categoria]!;
+    final anterior = List<QueryDocumentSnapshot>.from(itens);
+    setState(() {
+      final item = itens.removeAt(de);
+      itens.insert(para, item);
+      _salvandoOrdem = true;
+    });
+    try {
+      final batch = db.batch();
+      for (var i = 0; i < itens.length; i++) {
+        batch.update(itens[i].reference, {'ordem': i});
+      }
+      await batch.commit();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _porCategoria[categoria] = anterior);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar a ordem: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _salvandoOrdem = false);
+    }
+  }
+
+  /// Escolhe uma foto da galeria/câmera e envia pela Cloud Function
+  /// salvarFotoProduto (só admin). Devolve a URL pública ou null.
+  Future<String?> _enviarFoto(ImageSource origem) async {
+    final foto = await ImagePicker().pickImage(
+      source: origem,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      imageQuality: 80,
+    );
+    if (foto == null) return null;
+    final bytes = await foto.readAsBytes();
+    final nome = foto.name.toLowerCase();
+    final contentType = nome.endsWith('.png')
+        ? 'image/png'
+        : nome.endsWith('.webp')
+            ? 'image/webp'
+            : 'image/jpeg';
+    final resultado = await FirebaseFunctions.instanceFor(
+            region: 'southamerica-east1')
+        .httpsCallable('salvarFotoProduto')
+        .call({'imagemBase64': base64Encode(bytes), 'contentType': contentType});
+    return (resultado.data as Map)['url'] as String?;
   }
 
   Future<void> _abrirFormularioItem({
@@ -128,6 +200,9 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
     final tempoController = TextEditingController(
         text: (data?['tempoEstimadoMin'] as num?)?.toInt().toString() ?? '');
     var disponivel = data?['disponivel'] as bool? ?? true;
+    String? imagemUrl = data?['imagem_url'] as String?;
+    var enviandoFoto = false;
+    final categoriaOriginal = data?['categoria'] as String?;
     var destaque = data?['destaque'] as bool? ?? false;
     var isCombo = data?['combo'] as bool? ?? false;
     final itensCombo = ((data?['itensCombo'] as List<dynamic>?) ?? [])
@@ -205,7 +280,104 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                   item == null ? 'Novo produto' : 'Editar produto',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+                // Foto do produto (aparece no cardápio e na home do cliente)
+                Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: 84,
+                        height: 84,
+                        color: const Color(0xFFF5F0E8),
+                        child: enviandoFoto
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Color(0xFFC8A96E)),
+                                ),
+                              )
+                            : imagemUrl != null
+                                ? CachedNetworkImage(
+                                    imageUrl: imagemUrl!, fit: BoxFit.cover)
+                                : const Icon(Icons.photo_outlined,
+                                    size: 32, color: Color(0xFFC8A96E)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextButton.icon(
+                            onPressed: enviandoFoto
+                                ? null
+                                : () async {
+                                    final origem = await showModalBottomSheet<ImageSource>(
+                                      context: ctx,
+                                      builder: (c) => SafeArea(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            ListTile(
+                                              leading: const Icon(Icons.photo_library_outlined),
+                                              title: const Text('Escolher da galeria'),
+                                              onTap: () => Navigator.pop(c, ImageSource.gallery),
+                                            ),
+                                            ListTile(
+                                              leading: const Icon(Icons.photo_camera_outlined),
+                                              title: const Text('Tirar foto'),
+                                              onTap: () => Navigator.pop(c, ImageSource.camera),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                    if (origem == null) return;
+                                    setSheetState(() => enviandoFoto = true);
+                                    try {
+                                      final url = await _enviarFoto(origem);
+                                      if (url != null) {
+                                        setSheetState(() => imagemUrl = url);
+                                      }
+                                    } catch (e) {
+                                      if (ctx.mounted) {
+                                        ScaffoldMessenger.of(ctx).showSnackBar(
+                                          const SnackBar(
+                                              content: Text(
+                                                  'Não foi possível enviar a foto. Tente de novo.')),
+                                        );
+                                      }
+                                    } finally {
+                                      if (ctx.mounted) {
+                                        setSheetState(() => enviandoFoto = false);
+                                      }
+                                    }
+                                  },
+                            icon: const Icon(Icons.add_a_photo_outlined,
+                                size: 18, color: Color(0xFFC8A96E)),
+                            label: Text(
+                              imagemUrl == null ? 'Adicionar foto' : 'Trocar foto',
+                              style: const TextStyle(
+                                  color: Color(0xFFC8A96E), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (imagemUrl != null && !enviandoFoto)
+                            TextButton.icon(
+                              onPressed: () => setSheetState(() => imagemUrl = null),
+                              icon: const Icon(Icons.delete_outline,
+                                  size: 18, color: Color(0xFFE53935)),
+                              label: const Text('Remover foto',
+                                  style: TextStyle(color: Color(0xFFE53935))),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: nomeController,
                   decoration: const InputDecoration(labelText: 'Nome'),
@@ -290,6 +462,7 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                           precoController.text.trim().replaceAll(',', '.'));
                       final categoria = categoriaController.text.trim();
                       if (nome.isEmpty || preco == null || categoria.isEmpty) return;
+                      if (enviandoFoto) return; // espera a foto terminar de subir
                       if (isCombo && itensCombo.isEmpty) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
                           const SnackBar(content: Text('Adicione ao menos um item ao combo.')),
@@ -313,6 +486,12 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                       if (isCombo) {
                         novoData['itensCombo'] = itensCombo;
                       }
+                      if (imagemUrl != null) novoData['imagem_url'] = imagemUrl;
+                      // Produto novo, ou que mudou de categoria, entra no fim
+                      // da lista da categoria de destino.
+                      if (item == null || categoria != categoriaOriginal) {
+                        novoData['ordem'] = _porCategoria[categoria]?.length ?? 0;
+                      }
 
                       try {
                         if (item == null) {
@@ -323,6 +502,9 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                           }
                           if (!isCombo) {
                             novoData['itensCombo'] = FieldValue.delete();
+                          }
+                          if (imagemUrl == null) {
+                            novoData['imagem_url'] = FieldValue.delete();
                           }
                           await item.reference.update(novoData);
                         }
@@ -447,9 +629,32 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                       onRefresh: _carregar,
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-                        children: _porCategoria.entries.map((entry) {
-                          final categoria = entry.key;
-                          final itens = entry.value;
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12, left: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.drag_indicator,
+                                    size: 16, color: Color(0xFF9E9E9E)),
+                                const SizedBox(width: 6),
+                                const Expanded(
+                                  child: Text(
+                                    'Abra a categoria e segure ≡ para arrastar os produtos. A ordem das categorias fica em Categorias.',
+                                    style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 12),
+                                  ),
+                                ),
+                                if (_salvandoOrdem)
+                                  const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Color(0xFFC8A96E)),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          ..._ordemCategorias.map((categoria) {
+                          final itens = _porCategoria[categoria]!;
                           final tempoCategoria = _tempoPorCategoria[categoria];
 
                           return Card(
@@ -477,7 +682,15 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                                 onPressed: () => _editarTempoCategoria(categoria),
                               ),
                               children: [
-                                ...itens.map((item) {
+                                ReorderableListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  buildDefaultDragHandles: false,
+                                  itemCount: itens.length,
+                                  onReorder: (de, para) =>
+                                      _reordenarProdutos(categoria, de, para),
+                                  itemBuilder: (context, index) {
+                                  final item = itens[index];
                                   final data = item.data() as Map<String, dynamic>;
                                   final nome = data['nome'] as String? ?? '';
                                   final preco = (data['preco'] as num?)?.toDouble() ?? 0;
@@ -485,7 +698,15 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                                   final destaque = data['destaque'] as bool? ?? false;
                                   final combo = data['combo'] as bool? ?? false;
                                   final override = data['tempoEstimadoMin'] as num?;
-                                  return ListTile(
+                                  return ReorderableDelayedDragStartListener(
+                                    key: ValueKey('prod-${item.id}'),
+                                    index: index,
+                                    child: ListTile(
+                                    leading: ReorderableDragStartListener(
+                                      index: index,
+                                      child: const Icon(Icons.drag_indicator,
+                                          color: Color(0xFFC8A96E)),
+                                    ),
                                     title: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -524,8 +745,10 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                                           color: Color(0xFFE53935)),
                                       onPressed: () => _excluirItem(item),
                                     ),
+                                    ),
                                   );
-                                }),
+                                  },
+                                ),
                                 Padding(
                                   padding: const EdgeInsets.only(
                                       left: 16, right: 16, bottom: 12),
@@ -548,7 +771,8 @@ class _GerenciarCardapioScreenState extends State<GerenciarCardapioScreen> {
                               ],
                             ),
                           );
-                        }).toList(),
+                          }),
+                        ],
                       ),
                     ),
     );

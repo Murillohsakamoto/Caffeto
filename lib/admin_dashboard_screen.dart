@@ -8,7 +8,13 @@ import 'horarios_retirada_screen.dart';
 import 'parceiros_screen.dart';
 import 'notifications_service.dart';
 
-const _statusPagos = ['Aguardando preparo', 'Em preparo', 'Pronto', 'Entregue'];
+const _statusPagos = [
+  'Aguardando preparo',
+  'Em preparo',
+  'Pronto',
+  'Saiu para entrega',
+  'Entregue',
+];
 
 /// Tela de entrada do admin: resumo do dia (pedidos, faturamento, mais
 /// vendidos) e atalhos de gestão (cardápio, horários, parceiros, cozinha).

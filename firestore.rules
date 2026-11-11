@@ -105,21 +105,29 @@ service cloud.firestore {
          isCozinha() || isEntregador());
 
       // Só essas transições de status são válidas da cozinha pra frente —
-      // não dá pra pular etapa nem voltar o pedido pra trás. Pedido de
-      // entrega não pode ser marcado como "Entregue" pela cozinha — isso é
-      // exclusivo de quem está com a tela de entregas (isEntregador).
+      // não dá pra pular etapa nem voltar o pedido pra trás.
+      // Retirada: Aguardando preparo → Em preparo → Pronto → Entregue.
+      // Entrega:  Aguardando preparo → Em preparo → Pronto →
+      //           Saiu para entrega → Entregue.
       function transicaoValidaCozinha() {
         return
           (resource.data.status == 'Aguardando preparo' && request.resource.data.status == 'Em preparo') ||
           (resource.data.status == 'Em preparo' && request.resource.data.status == 'Pronto') ||
           (resource.data.status == 'Pronto' && request.resource.data.status == 'Entregue' &&
-           resource.data.get('tipoEntrega', 'retirada') != 'entrega');
+           resource.data.get('tipoEntrega', 'retirada') != 'entrega') ||
+          transicaoValidaEntrega();
       }
 
-      // Entregador só avança pedidos de entrega de "Pronto" pra "Entregue".
-      function transicaoValidaEntregador() {
+      // Etapas exclusivas de pedido de entrega, feitas tanto pela cozinha
+      // (aba Entregas) quanto por quem tem o papel de entregador.
+      function transicaoValidaEntrega() {
         return resource.data.get('tipoEntrega', 'retirada') == 'entrega' &&
-          resource.data.status == 'Pronto' && request.resource.data.status == 'Entregue';
+          ((resource.data.status == 'Pronto' && request.resource.data.status == 'Saiu para entrega') ||
+           (resource.data.status == 'Saiu para entrega' && request.resource.data.status == 'Entregue'));
+      }
+
+      function transicaoValidaEntregador() {
+        return transicaoValidaEntrega();
       }
 
       // O dono do pedido só pode alterar campos que não afetam o status, o
