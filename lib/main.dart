@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'firebase_options.dart';
 import 'cardapio_screen.dart';
+import 'ordem_cardapio.dart';
 import 'sacola_screen.dart';
 import 'perfil_screen.dart';
 import 'cart_controller.dart';
@@ -292,7 +293,8 @@ class _HomePageState extends State<_HomePage> {
         .listen((snap) {
           if (!mounted) return;
           setState(() {
-            _featured = snap.docs.map((d) => d.data()).toList();
+            _featured = snap.docs.map((d) => d.data()).toList()
+              ..sort(compararProdutos);
             _featuredLoaded = true;
           });
         });
