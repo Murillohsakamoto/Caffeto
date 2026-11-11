@@ -10,7 +10,13 @@ import 'main.dart';
 enum _PaymentMethod { pix, card }
 
 const _prazoRetirada = Duration(minutes: 20);
-const _statusPosPagamento = ['Aguardando preparo', 'Em preparo', 'Pronto', 'Entregue'];
+const _statusPosPagamento = [
+  'Aguardando preparo',
+  'Em preparo',
+  'Pronto',
+  'Saiu para entrega',
+  'Entregue',
+];
 
 class PaymentScreen extends StatefulWidget {
   final String orderId;
@@ -679,13 +685,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ? (
                 icon: Icons.delivery_dining_outlined,
                 titulo: 'Pedido pronto!',
-                subtitulo: 'Aguarde a entrega no seu endereço.',
+                subtitulo: 'Logo sai para entrega no seu endereço.',
               )
             : (
                 icon: Icons.shopping_bag_outlined,
                 titulo: 'Pedido pronto!',
                 subtitulo: 'Pode retirar no balcão.',
               );
+      case 'Saiu para entrega':
+        return (
+          icon: Icons.delivery_dining_outlined,
+          titulo: 'Saiu para entrega!',
+          subtitulo: 'Seu pedido está a caminho do seu endereço.',
+        );
       case 'Entregue':
         return (
           icon: Icons.done_all,
