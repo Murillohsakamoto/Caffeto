@@ -12,6 +12,8 @@ Color _statusColor(String status) {
       return const Color(0xFFE53935);
     case 'Pronto':
       return const Color(0xFF2196F3);
+    case 'Saiu para entrega':
+      return const Color(0xFF9C27B0);
     default:
       return const Color(0xFFF59300);
   }
