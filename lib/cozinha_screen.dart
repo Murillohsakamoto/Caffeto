@@ -8,6 +8,15 @@ import 'notifications_service.dart';
 
 const _prazoRetirada = Duration(minutes: 20);
 
+// Pedidos que ainda estão "na mesa" da cozinha. "Saiu para entrega" fica
+// visível na aba Entregas até alguém marcar como entregue.
+const _statusAtivos = [
+  'Aguardando preparo',
+  'Em preparo',
+  'Pronto',
+  'Saiu para entrega',
+];
+
 class CozinhaScreen extends StatelessWidget {
   /// true quando essa é a tela de entrada da conta (admin/cozinha caem
   /// direto aqui ao logar, via _AuthGate) — nesse caso não existe rota de
@@ -51,7 +60,9 @@ class CozinhaScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
       backgroundColor: const Color(0xFFF5F0E8),
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -117,12 +128,21 @@ class CozinhaScreen extends StatelessWidget {
                 ),
               ]
             : null,
+        bottom: const TabBar(
+          labelColor: Color(0xFF1A1A1A),
+          unselectedLabelColor: Color(0xFF9E9E9E),
+          indicatorColor: Color(0xFFC8A96E),
+          labelStyle: TextStyle(fontWeight: FontWeight.w800),
+          tabs: [
+            Tab(icon: Icon(Icons.storefront_outlined), text: 'Retiradas'),
+            Tab(icon: Icon(Icons.delivery_dining_outlined), text: 'Entregas'),
+          ],
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: db
             .collection('pedidos')
-            .where('status',
-                whereIn: ['Aguardando preparo', 'Em preparo', 'Pronto'])
+            .where('status', whereIn: _statusAtivos)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -155,84 +175,93 @@ class CozinhaScreen extends StatelessWidget {
             return aTs.compareTo(bTs);
           });
 
-          if (docs.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.coffee_maker_outlined,
-                    size: 72,
-                    color: Color(0xFFD9D9D9),
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Nenhum pedido no momento',
-                    style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 15),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Os pedidos pagos aparecem aqui em tempo real',
-                    style: TextStyle(color: Color(0xFFBBBBBB), fontSize: 12),
-                  ),
-                ],
-              ),
-            );
-          }
+          bool ehEntrega(QueryDocumentSnapshot d) =>
+              (d.data() as Map<String, dynamic>)['tipoEntrega'] == 'entrega';
+          final retiradas = docs.where((d) => !ehEntrega(d)).toList();
+          final entregas = docs.where(ehEntrega).toList();
 
-          return Column(
+          return TabBarView(
             children: [
-              _buildSummaryBar(docs),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    return _OrderCard(
-                      docId: doc.id,
-                      data: doc.data() as Map<String, dynamic>,
-                    );
-                  },
-                ),
-              ),
+              _buildLista(retiradas, entrega: false),
+              _buildLista(entregas, entrega: true),
             ],
           );
         },
       ),
+      ),
     );
   }
 
-  Widget _buildSummaryBar(List<QueryDocumentSnapshot> docs) {
-    final aguardando = docs
-        .where(
-          (d) =>
-              (d.data() as Map<String, dynamic>)['status'] ==
-              'Aguardando preparo',
-        )
-        .length;
-    final emPreparo = docs
-        .where(
-          (d) => (d.data() as Map<String, dynamic>)['status'] == 'Em preparo',
-        )
-        .length;
-    final prontos = docs
-        .where(
-          (d) => (d.data() as Map<String, dynamic>)['status'] == 'Pronto',
-        )
+  Widget _buildLista(List<QueryDocumentSnapshot> docs, {required bool entrega}) {
+    if (docs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              entrega ? Icons.delivery_dining_outlined : Icons.coffee_maker_outlined,
+              size: 72,
+              color: const Color(0xFFD9D9D9),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              entrega ? 'Nenhuma entrega no momento' : 'Nenhuma retirada no momento',
+              style: const TextStyle(color: Color(0xFF9E9E9E), fontSize: 15),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Os pedidos pagos aparecem aqui em tempo real',
+              style: TextStyle(color: Color(0xFFBBBBBB), fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        _buildSummaryBar(docs, entrega: entrega),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              return _OrderCard(
+                key: ValueKey(doc.id),
+                docId: doc.id,
+                data: doc.data() as Map<String, dynamic>,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryBar(List<QueryDocumentSnapshot> docs, {required bool entrega}) {
+    int contar(String status) => docs
+        .where((d) => (d.data() as Map<String, dynamic>)['status'] == status)
         .length;
 
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          _summaryChip('$aguardando aguardando', const Color(0xFFFF9800)),
-          const SizedBox(width: 8),
-          _summaryChip('$emPreparo em preparo', const Color(0xFF2196F3)),
-          const SizedBox(width: 8),
-          _summaryChip('$prontos prontos', const Color(0xFF4CAF50)),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _summaryChip('${contar('Aguardando preparo')} aguardando', const Color(0xFFFF9800)),
+            const SizedBox(width: 8),
+            _summaryChip('${contar('Em preparo')} em preparo', const Color(0xFF2196F3)),
+            const SizedBox(width: 8),
+            _summaryChip('${contar('Pronto')} prontos', const Color(0xFF4CAF50)),
+            if (entrega) ...[
+              const SizedBox(width: 8),
+              _summaryChip('${contar('Saiu para entrega')} a caminho', const Color(0xFF9C27B0)),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -260,7 +289,7 @@ class _OrderCard extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
 
-  const _OrderCard({required this.docId, required this.data});
+  const _OrderCard({super.key, required this.docId, required this.data});
 
   @override
   State<_OrderCard> createState() => _OrderCardState();
@@ -295,6 +324,8 @@ class _OrderCardState extends State<_OrderCard> {
         return const Color(0xFF2196F3);
       case 'Pronto':
         return const Color(0xFF4CAF50);
+      case 'Saiu para entrega':
+        return const Color(0xFF9C27B0);
       default:
         return const Color(0xFF9C27B0);
     }
@@ -308,10 +339,14 @@ class _OrderCardState extends State<_OrderCard> {
         update['iniciadoEm'] = FieldValue.serverTimestamp();
       } else if (newStatus == 'Pronto') {
         update['prontoEm'] = FieldValue.serverTimestamp();
+      } else if (newStatus == 'Saiu para entrega') {
+        // A Cloud Function notificarPedidoPronto avisa o cliente por push.
+        update['saiuParaEntregaEm'] = FieldValue.serverTimestamp();
       } else if (newStatus == 'Entregue') {
         update['entregueEm'] = FieldValue.serverTimestamp();
       }
       await db.collection('pedidos').doc(widget.docId).update(update);
+      if (mounted) setState(() => _updating = false);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -433,6 +468,7 @@ class _OrderCardState extends State<_OrderCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildClienteEEndereco(tipoEntrega),
                 ...itens.map((item) {
                   final i = item as Map<String, dynamic>;
                   final itensCombo = i['itensCombo'] as List<dynamic>?;
@@ -522,15 +558,100 @@ class _OrderCardState extends State<_OrderCard> {
     );
   }
 
+  /// Nome do cliente e, se for entrega, o endereço completo em destaque —
+  /// é o que a cozinha/entregador precisa pra levar o pedido.
+  Widget _buildClienteEEndereco(String tipoEntrega) {
+    final nomeCliente = (widget.data['nomeCliente'] as String?) ?? '';
+    final endereco = widget.data['enderecoEntrega'] as Map<String, dynamic>?;
+    final temNome = nomeCliente.isNotEmpty;
+
+    if (tipoEntrega != 'entrega') {
+      if (!temNome) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.person_outline, size: 16, color: Color(0xFF9E9E9E)),
+            const SizedBox(width: 6),
+            Text(nomeCliente,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      );
+    }
+
+    String campo(String chave) {
+      final v = (endereco?[chave] as String?)?.trim() ?? '';
+      return v.isEmpty ? '-' : v;
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF9C27B0).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF9C27B0).withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_on_outlined, size: 18, color: Color(0xFF9C27B0)),
+              const SizedBox(width: 6),
+              const Text('ENTREGAR EM',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: Color(0xFF9C27B0))),
+              const Spacer(),
+              if (temNome)
+                Flexible(
+                  child: Text(nomeCliente,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _campoEndereco('Prédio', campo('predio')),
+              _campoEndereco('Andar', campo('andar')),
+              _campoEndereco('Sala', campo('sala')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _campoEndereco(String rotulo, String valor) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(rotulo,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF9E9E9E))),
+          Text(valor,
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A))),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRetiradaInfo(String status) {
     final horario = widget.data['horarioRetirada'] as String?;
     final prontoEm = widget.data['prontoEm'] as Timestamp?;
     final tipoEntrega = widget.data['tipoEntrega'] as String? ?? 'retirada';
-    final endereco = widget.data['enderecoEntrega'] as Map<String, dynamic>?;
 
     String? countdownText;
     Color countdownColor = const Color(0xFF9E9E9E);
-    if (status == 'Pronto' && prontoEm != null) {
+    if (status == 'Pronto' && prontoEm != null && tipoEntrega != 'entrega') {
       final prazo = prontoEm.toDate().add(_prazoRetirada);
       final restante = prazo.difference(DateTime.now());
       if (restante.isNegative) {
@@ -543,9 +664,12 @@ class _OrderCardState extends State<_OrderCard> {
     }
 
     final String label;
-    if (tipoEntrega == 'entrega' && endereco != null) {
-      label =
-          'Entrega: Prédio ${endereco['predio']}, ${endereco['andar']}º andar, ${endereco['sala']}';
+    if (tipoEntrega == 'entrega') {
+      // O endereço já aparece em destaque no topo do card.
+      final saiuEm = widget.data['saiuParaEntregaEm'] as Timestamp?;
+      label = saiuEm != null
+          ? 'Saiu para entrega às ${saiuEm.toDate().hour.toString().padLeft(2, '0')}:${saiuEm.toDate().minute.toString().padLeft(2, '0')}'
+          : 'Pedido de entrega';
     } else if (horario != null) {
       label = 'Retirada às $horario';
     } else {
@@ -641,22 +765,39 @@ class _OrderCardState extends State<_OrderCard> {
       );
     }
     if (status == 'Pronto' && tipoEntrega == 'entrega') {
-      // Pedido de entrega: a partir daqui é com quem está na tela de
-      // entregas, a cozinha não marca mais nada nesse pedido.
-      return Container(
+      return SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F0E8),
-          borderRadius: BorderRadius.circular(20),
+        child: ElevatedButton.icon(
+          onPressed: () => _updateStatus('Saiu para entrega'),
+          icon: const Icon(Icons.delivery_dining_outlined, size: 18),
+          label: const Text('Saiu para entrega (avisa o cliente)'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF9C27B0),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
         ),
-        child: const Text(
-          'Aguardando retirada pelo entregador',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF9E9E9E),
+      );
+    }
+    if (status == 'Saiu para entrega') {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () => _updateStatus('Entregue'),
+          icon: const Icon(Icons.done_all, size: 18),
+          label: const Text('Marcar como entregue'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF4CAF50),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(vertical: 12),
           ),
         ),
       );
