@@ -15,6 +15,15 @@ service firebase.storage {
         fileName == request.auth.uid + '.jpg';
     }
 
+    // Fotos dos produtos do cardápio: vitrine pública (visitante vê sem
+    // login). Quem grava é só a Cloud Function salvarFotoProduto (Admin
+    // SDK, ignora estas regras), depois de conferir que é admin — o app
+    // nunca escreve aqui direto.
+    match /cardapio/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Bloqueia qualquer outro caminho por padrão.
     match /{allPaths=**} {
       allow read, write: if false;
