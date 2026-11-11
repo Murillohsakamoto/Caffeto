@@ -182,8 +182,23 @@ class _SacolaScreenState extends State<SacolaScreen> {
     try {
       final docRef = _pedidoEmCriacao ??= db.collection('pedidos').doc();
 
+      // Nome do cliente vai junto no pedido pra cozinha/entrega saberem pra
+      // quem é — eles não têm permissão de ler o perfil (usuarios/{uid}).
+      String nomeCliente = user.displayName ?? '';
+      try {
+        final perfil = await db.collection('usuarios').doc(user.uid).get();
+        final nomePerfil = perfil.data()?['nome'] as String?;
+        if (nomePerfil != null && nomePerfil.trim().isNotEmpty) {
+          nomeCliente = nomePerfil.trim();
+        }
+      } catch (_) {
+        // Sem o perfil segue com o nome da conta (ou vazio) — não pode
+        // travar o pedido por isso.
+      }
+
       await docRef.set({
         'userId': user.uid,
+        if (nomeCliente.isNotEmpty) 'nomeCliente': nomeCliente,
         'itens': cart.items
             .map(
               (i) => {
